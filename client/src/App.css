@@ -1,0 +1,522 @@
+/**
+ * Basic CSS Styles
+ * 
+ * Minimal styling for usability.
+ * No libraries, just plain CSS.
+ */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+}
+
+.app {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.container {
+    width: 100%;
+    max-width: 500px;
+}
+
+/* =============================================================================
+   PAGE STYLES
+   ============================================================================= */
+
+.page {
+    background: #16213e;
+    border-radius: 12px;
+    padding: 30px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.page h1 {
+    text-align: center;
+    font-size: 2rem;
+    margin-bottom: 30px;
+    color: #e94560;
+}
+
+.page h2 {
+    text-align: center;
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    color: #fff;
+}
+
+.page h3 {
+    font-size: 1.1rem;
+    margin-bottom: 15px;
+    color: #ccc;
+}
+
+/* =============================================================================
+   FORMS
+   ============================================================================= */
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #aaa;
+    font-size: 0.9rem;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 12px 15px;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    background: #0f3460;
+    color: #fff;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    border-color: #e94560;
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+    color: #666;
+}
+
+.form-group input:disabled,
+.form-group textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* =============================================================================
+   BUTTONS
+   ============================================================================= */
+
+.button-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #0f3460;
+    color: #fff;
+}
+
+button:hover:not(:disabled) {
+    background: #1a4a7a;
+}
+
+button.primary {
+    background: #e94560;
+}
+
+button.primary:hover:not(:disabled) {
+    background: #ff6b8a;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* =============================================================================
+   ERROR MESSAGES
+   ============================================================================= */
+
+.error {
+    background: #e94560;
+    color: #fff;
+    padding: 12px 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+/* =============================================================================
+   LOBBY STYLES
+   ============================================================================= */
+
+.room-code {
+    text-align: center;
+    margin-bottom: 25px;
+    padding: 15px;
+    background: #0f3460;
+    border-radius: 8px;
+}
+
+.room-code span {
+    display: block;
+    color: #aaa;
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+}
+
+.room-code strong {
+    font-size: 2rem;
+    letter-spacing: 5px;
+    color: #e94560;
+}
+
+.player-list {
+    margin-bottom: 25px;
+}
+
+.player-list ul {
+    list-style: none;
+}
+
+.player-list li {
+    padding: 10px 15px;
+    background: #0f3460;
+    margin-bottom: 5px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.player-list li.you {
+    border-left: 3px solid #e94560;
+}
+
+.host-badge {
+    font-size: 0.8rem;
+    color: #ffd700;
+}
+
+.you-badge {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.waiting-message {
+    text-align: center;
+    color: #888;
+    font-style: italic;
+    margin-top: 15px;
+}
+
+.host-controls {
+    text-align: center;
+}
+
+/* =============================================================================
+   ROLE REVEAL STYLES
+   ============================================================================= */
+
+.topic-display {
+    text-align: center;
+    margin-bottom: 25px;
+    padding: 15px;
+    background: #0f3460;
+    border-radius: 8px;
+}
+
+.topic-display span {
+    display: block;
+    color: #aaa;
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+}
+
+.topic-display strong {
+    font-size: 1.5rem;
+    color: #fff;
+}
+
+.role {
+    text-align: center;
+    padding: 25px;
+    border-radius: 8px;
+    margin-bottom: 25px;
+}
+
+.role.imposter {
+    background: linear-gradient(135deg, #e94560 0%, #8b1538 100%);
+}
+
+.role.regular {
+    background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+    border: 2px solid #0f3460;
+}
+
+.role h3 {
+    color: #fff;
+    margin-bottom: 15px;
+}
+
+.role p {
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 10px;
+}
+
+.secret-word {
+    margin: 15px 0;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+}
+
+.secret-word span {
+    display: block;
+    color: #aaa;
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+}
+
+.secret-word strong {
+    font-size: 1.5rem;
+    color: #4ade80;
+}
+
+/* =============================================================================
+   DESCRIPTION PHASE STYLES
+   ============================================================================= */
+
+.word-reminder {
+    text-align: center;
+    padding: 10px;
+    background: #0f3460;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.word-reminder strong {
+    color: #4ade80;
+}
+
+.imposter-reminder {
+    text-align: center;
+    padding: 10px;
+    background: #e94560;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.description-form {
+    margin-bottom: 20px;
+}
+
+.description-form textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.submitted-message {
+    text-align: center;
+    padding: 20px;
+    background: #0f3460;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.submitted-message p:first-child {
+    color: #4ade80;
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+}
+
+.progress {
+    text-align: center;
+    color: #888;
+    padding: 10px;
+    background: #0f3460;
+    border-radius: 6px;
+}
+
+/* =============================================================================
+   VOTING PHASE STYLES
+   ============================================================================= */
+
+.descriptions-list {
+    margin-bottom: 25px;
+}
+
+.descriptions-list ul {
+    list-style: none;
+}
+
+.descriptions-list li {
+    padding: 12px 15px;
+    background: #0f3460;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    font-style: italic;
+    color: #ccc;
+}
+
+.voting-section {
+    margin-bottom: 20px;
+}
+
+.vote-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.vote-buttons button {
+    text-align: left;
+}
+
+.vote-buttons button.disabled {
+    opacity: 0.4;
+}
+
+.voted-message {
+    text-align: center;
+    padding: 20px;
+    background: #0f3460;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.voted-message p:first-child {
+    color: #4ade80;
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+}
+
+/* =============================================================================
+   RESULTS STYLES
+   ============================================================================= */
+
+.result-banner {
+    text-align: center;
+    padding: 25px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.result-banner.players-win {
+    background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+}
+
+.result-banner.imposter-wins {
+    background: linear-gradient(135deg, #e94560 0%, #8b1538 100%);
+}
+
+.result-banner h3 {
+    color: #fff;
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+.personal-result {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.personal-result .win {
+    color: #4ade80;
+    font-size: 1.2rem;
+}
+
+.personal-result .lose {
+    color: #f87171;
+    font-size: 1.2rem;
+}
+
+.result-details {
+    margin-bottom: 25px;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 15px;
+    background: #0f3460;
+    margin-bottom: 8px;
+    border-radius: 6px;
+}
+
+.detail-item span {
+    color: #888;
+}
+
+.detail-item strong {
+    color: #fff;
+}
+
+.vote-summary {
+    margin-bottom: 25px;
+}
+
+.vote-summary ul {
+    list-style: none;
+}
+
+.vote-summary li {
+    padding: 10px 15px;
+    background: #0f3460;
+    margin-bottom: 5px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.imposter-tag {
+    color: #e94560;
+}
+
+.restart-hint {
+    text-align: center;
+    color: #666;
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
+/* =============================================================================
+   TIMER STYLES
+   ============================================================================= */
+
+.timer {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    padding: 10px 20px;
+    background: #0f3460;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: #4cc9f0;
+}
+
+.timer-warning {
+    color: #e94560;
+    background: #2a1a2a;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
