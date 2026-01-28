@@ -16,9 +16,10 @@ const { v4: uuidv4 } = require('uuid');
  *   [roomCode]: {
  *     code: string,
  *     hostId: string,          // Player ID of the room host
- *     phase: 'lobby' | 'roleReveal' | 'description' | 'voting' | 'results',
+ *     phase: 'lobby' | 'roleReveal' | 'description' | 'voting' | 'results' | 'postGame',
  *     players: Map<playerId, { id, name, socketId }>,
- *     createdAt: Date
+ *     createdAt: Date,
+ *     gameNumber: number       // V1.1: Track game count for replays
  *   }
  * }
  */
@@ -136,7 +137,8 @@ function createRoom(hostName, socketId) {
         hostId: playerId,
         phase: 'lobby',
         players: new Map([[playerId, player]]),
-        createdAt: new Date()
+        createdAt: new Date(),
+        gameNumber: 0   // V1.1: Track number of games played
     };
     
     rooms.set(roomCode, room);
@@ -160,7 +162,8 @@ function joinRoom(roomCode, playerName, socketId) {
         return { error: 'ROOM_NOT_FOUND' };
     }
     
-    if (room.phase !== 'lobby') {
+    // V1.1: Allow joining in lobby or postGame phase
+    if (room.phase !== 'lobby' && room.phase !== 'postGame') {
         return { error: 'GAME_IN_PROGRESS' };
     }
     
@@ -259,6 +262,7 @@ function handlePlayerDisconnectMidGame(roomCode, playerId) {
     
     // =========================================================================
     // DESCRIPTION PHASE: Auto-submit "(Disconnected)" for the player
+    // V1.1: Also handles sequential speaking order
     // =========================================================================
     if (phase === 'description') {
         // If player hasn't submitted a description, auto-submit for them
@@ -266,6 +270,17 @@ function handlePlayerDisconnectMidGame(roomCode, playerId) {
             room.descriptions[playerId] = '(Disconnected)';
             result.autoSubmitted = true;
             console.log(`[Game] Auto-submitted "(Disconnected)" for disconnected player in room ${roomCode}`);
+            
+            // V1.1: Check if disconnected player was the current speaker
+            if (room.speakingOrder && room.currentSpeakerIndex !== undefined) {
+                const currentSpeaker = room.speakingOrder[room.currentSpeakerIndex];
+                if (currentSpeaker && currentSpeaker.id === playerId) {
+                    result.wasCurrentSpeaker = true;
+                    // Advance to next speaker
+                    room.currentSpeakerIndex++;
+                    result.newSpeakerIndex = room.currentSpeakerIndex;
+                }
+            }
         }
         
         // Check if all remaining players have submitted (excluding disconnected)
@@ -277,17 +292,23 @@ function handlePlayerDisconnectMidGame(roomCode, playerId) {
     
     // =========================================================================
     // VOTING PHASE: Player's vote is ignored (abstain)
+    // V1.1: Uses confirmedVotes for 2-step voting
     // =========================================================================
     if (phase === 'voting') {
         // No action needed - player simply doesn't vote (abstain)
         // Their vote will be ignored in calculateVoteResults()
         console.log(`[Game] Disconnected player's vote ignored in room ${roomCode}`);
         
-        // Check if all remaining players have voted
-        // Note: We check against (total - 1) since this player won't vote
-        const votedCount = Object.keys(room.votes).length;
+        // V1.1: Check against confirmedVotes instead of votes
+        const votes = room.confirmedVotes || room.votes || {};
+        const votedCount = Object.keys(votes).length;
         const remainingPlayers = room.players.size - 1; // Exclude disconnected player
         result.votingComplete = remainingPlayers > 0 && votedCount >= remainingPlayers;
+    }
+    
+    // V1.1: PostGame phase - nothing special to do
+    if (phase === 'postGame') {
+        // Player leaving postGame is handled normally
     }
     
     return result;
@@ -370,11 +391,12 @@ function getRejoinState(roomCode, playerId) {
         room: room,
         player: player,
         phase: room.phase,
-        topic: room.topic || null
+        topic: room.topic || null,
+        gameNumber: room.gameNumber || 1
     };
     
     // Game in progress - include role information
-    if (room.phase !== 'lobby' && room.imposterId) {
+    if (room.phase !== 'lobby' && room.phase !== 'postGame' && room.imposterId) {
         state.isImposter = playerId === room.imposterId;
         
         // Only non-imposters see the word
@@ -383,8 +405,20 @@ function getRejoinState(roomCode, playerId) {
         }
     }
     
-    // Description phase or later - include submission status
-    if (room.descriptions) {
+    // V1.1: Sequential description phase state
+    if (room.phase === 'description' && room.speakingOrder) {
+        state.speakingOrder = room.speakingOrder;
+        state.currentSpeakerIndex = room.currentSpeakerIndex || 0;
+        
+        // Get attributed descriptions for live feed
+        const descResult = getAttributedDescriptions(roomCode);
+        if (descResult.success) {
+            state.liveDescriptions = descResult.descriptions;
+        }
+        
+        state.hasSubmittedDescription = !!room.descriptions[playerId];
+    } else if (room.descriptions) {
+        // Description phase or later - include submission status
         state.hasSubmittedDescription = !!room.descriptions[playerId];
         state.submissionProgress = {
             count: Object.keys(room.descriptions).length,
@@ -392,31 +426,80 @@ function getRejoinState(roomCode, playerId) {
         };
     }
     
-    // Voting phase or later - include vote status and descriptions
-    if (room.phase === 'voting' || room.phase === 'results') {
-        // Get anonymized descriptions for voting
-        const descResult = getAnonymizedDescriptions(roomCode);
+    // Voting phase - include vote status, descriptions, and V1.1 fields
+    if (room.phase === 'voting') {
+        // Get attributed descriptions for voting display
+        const descResult = getAttributedDescriptions(roomCode);
         if (descResult.success) {
             state.descriptions = descResult.descriptions;
         }
         
-        if (room.votes) {
-            state.hasVoted = !!room.votes[playerId];
-            state.voteProgress = {
-                count: Object.keys(room.votes).length,
+        // V1.1: Two-step voting state
+        if (room.pendingVotes && room.pendingVotes[playerId]) {
+            state.selectedVote = room.pendingVotes[playerId];
+        }
+        
+        if (room.confirmedVotes) {
+            state.hasVoted = !!room.confirmedVotes[playerId];
+            state.confirmProgress = {
+                count: Object.keys(room.confirmedVotes).length,
                 total: room.players.size
             };
+        }
+        
+        // V1.1: Chat messages
+        if (room.chat && room.chat.messages) {
+            state.chatMessages = room.chat.messages;
         }
     }
     
     // Results phase - include final results
     if (room.phase === 'results') {
+        // Get attributed descriptions for display
+        const descResult = getAttributedDescriptions(roomCode);
+        if (descResult.success) {
+            state.descriptions = descResult.descriptions;
+        }
+        
         // Recalculate vote summary for results display
         const voteCounts = {};
         for (const pid of room.players.keys()) {
             voteCounts[pid] = 0;
         }
-        for (const targetId of Object.values(room.votes || {})) {
+        // Use confirmedVotes if available (v1.1), fallback to votes (v1.0)
+        const votes = room.confirmedVotes || room.votes || {};
+        for (const targetId of Object.values(votes)) {
+            if (voteCounts[targetId] !== undefined) {
+                voteCounts[targetId]++;
+            }
+        }
+        
+        const voteSummary = [];
+        for (const [pid, count] of Object.entries(voteCounts)) {
+            const p = room.players.get(pid);
+            if (p) {
+                voteSummary.push({ playerId: pid, playerName: p.name, votes: count });
+            }
+        }
+        voteSummary.sort((a, b) => b.votes - a.votes);
+        
+        const imposter = room.players.get(room.imposterId);
+        state.results = {
+            imposter: imposter ? { id: imposter.id, name: imposter.name } : null,
+            secretWord: room.word,
+            voteSummary: voteSummary
+        };
+    }
+    
+    // V1.1: PostGame phase - include last results for display
+    if (room.phase === 'postGame') {
+        // Recalculate last game results
+        const voteCounts = {};
+        for (const pid of room.players.keys()) {
+            voteCounts[pid] = 0;
+        }
+        const votes = room.confirmedVotes || room.votes || {};
+        for (const targetId of Object.values(votes)) {
             if (voteCounts[targetId] !== undefined) {
                 voteCounts[targetId]++;
             }
@@ -518,10 +601,15 @@ function startGame(roomCode, requestingPlayerId) {
 
 /**
  * Transitions room from roleReveal to description phase.
- * Initializes the descriptions storage.
+ * Initializes the descriptions storage and sets up sequential speaking order.
+ * 
+ * V1.1 SEQUENTIAL DESCRIPTION:
+ * - Generates randomized speaking order (all players including imposter)
+ * - Sets currentSpeakerIndex to 0 (first speaker)
+ * - Each speaker gets 10 seconds to submit
  * 
  * @param {string} roomCode - The room code
- * @returns {Object} - { success, error?, room? }
+ * @returns {Object} - { success, error?, room?, speakingOrder? }
  */
 function transitionToDescriptionPhase(roomCode) {
     const room = rooms.get(roomCode.toUpperCase());
@@ -538,19 +626,34 @@ function transitionToDescriptionPhase(roomCode) {
     room.phase = 'description';
     room.descriptions = {}; // { [playerId]: string }
     
-    console.log(`[Game] Room ${roomCode} transitioned to description phase`);
+    // V1.1: Set up sequential speaking order
+    const playerIds = Array.from(room.players.keys());
+    room.speakingOrder = shuffleArray(playerIds); // Randomize order
+    room.currentSpeakerIndex = 0;
+    room.currentDescription = null; // Live description being typed (not used server-side)
     
-    return { success: true, room: room };
+    console.log(`[Game] Room ${roomCode} transitioned to description phase (sequential mode)`);
+    console.log(`[Game] Speaking order: ${room.speakingOrder.map(id => room.players.get(id).name).join(' → ')}`);
+    
+    return { 
+        success: true, 
+        room: room,
+        speakingOrder: room.speakingOrder.map(id => ({
+            id: id,
+            name: room.players.get(id).name
+        })),
+        currentSpeakerIndex: 0
+    };
 }
 
 /**
  * Submits a description from a player.
- * Validates phase, prevents duplicates, and checks for completion.
+ * V1.1: Only the current speaker can submit during their turn.
  * 
  * @param {string} roomCode - The room code
  * @param {string} playerId - The ID of the player submitting
  * @param {string} description - The description text
- * @returns {Object} - { success, error?, room?, allSubmitted? }
+ * @returns {Object} - { success, error?, room?, allSubmitted?, turnComplete? }
  */
 function submitDescription(roomCode, playerId, description) {
     const room = rooms.get(roomCode.toUpperCase());
@@ -570,32 +673,47 @@ function submitDescription(roomCode, playerId, description) {
         return { success: false, error: 'PLAYER_NOT_IN_ROOM' };
     }
     
+    // V1.1: Validation - Only current speaker can submit
+    const currentSpeakerId = room.speakingOrder[room.currentSpeakerIndex];
+    if (playerId !== currentSpeakerId) {
+        return { success: false, error: 'NOT_YOUR_TURN' };
+    }
+    
     // Validation: Player has not already submitted
     if (room.descriptions[playerId]) {
         return { success: false, error: 'ALREADY_SUBMITTED' };
     }
     
-    // Validation: Description is non-empty
+    // Validation: Description is non-empty (allow empty for auto-submit)
     const trimmedDescription = description.trim();
-    if (trimmedDescription.length === 0) {
-        return { success: false, error: 'EMPTY_DESCRIPTION' };
-    }
+    const finalDescription = trimmedDescription.length === 0 ? '(No response)' : trimmedDescription;
     
-    // Store the description (server knows who submitted, but won't reveal)
-    room.descriptions[playerId] = trimmedDescription;
+    // Store the description with player attribution (V1.1: not anonymous)
+    room.descriptions[playerId] = finalDescription;
     
     const submittedCount = Object.keys(room.descriptions).length;
     const totalPlayers = room.players.size;
     const allSubmitted = submittedCount === totalPlayers;
     
-    console.log(`[Game] ${room.players.get(playerId).name} submitted description (${submittedCount}/${totalPlayers})`);
+    // Move to next speaker
+    room.currentSpeakerIndex++;
+    const turnComplete = true;
+    
+    const player = room.players.get(playerId);
+    console.log(`[Game] ${player.name} submitted description (${submittedCount}/${totalPlayers})`);
     
     return {
         success: true,
         room: room,
         allSubmitted: allSubmitted,
+        turnComplete: turnComplete,
         submittedCount: submittedCount,
-        totalPlayers: totalPlayers
+        totalPlayers: totalPlayers,
+        submittedBy: {
+            id: playerId,
+            name: player.name
+        },
+        description: finalDescription
     };
 }
 
@@ -646,6 +764,222 @@ function autoSubmitMissingDescriptions(roomCode) {
 }
 
 /**
+ * V1.1: Auto-submit for current speaker when their turn times out.
+ * Only submits for the current speaker, then advances to next.
+ * 
+ * @param {string} roomCode - The room code
+ * @returns {Object} - { success, error?, room?, allSubmitted?, nextSpeaker? }
+ */
+function autoSubmitCurrentSpeaker(roomCode) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    if (room.phase !== 'description') {
+        return { success: false, error: 'INVALID_PHASE' };
+    }
+    
+    // Get current speaker
+    const currentSpeakerId = room.speakingOrder[room.currentSpeakerIndex];
+    if (!currentSpeakerId) {
+        return { success: false, error: 'NO_CURRENT_SPEAKER' };
+    }
+    
+    // FIX 2: Check if current speaker still exists (may have disconnected)
+    const currentPlayer = room.players.get(currentSpeakerId);
+    if (!currentPlayer) {
+        // Player disconnected but still in speakingOrder - their description was
+        // already auto-submitted by handlePlayerDisconnectMidGame, just advance
+        console.log(`[Game] Skipping disconnected speaker at index ${room.currentSpeakerIndex}`);
+        room.currentSpeakerIndex++;
+        
+        // Check if we need to skip more disconnected players (avoid infinite loop with limit)
+        let skipCount = 0;
+        const maxSkips = room.speakingOrder.length;
+        while (room.currentSpeakerIndex < room.speakingOrder.length && skipCount < maxSkips) {
+            const nextId = room.speakingOrder[room.currentSpeakerIndex];
+            if (room.players.has(nextId)) {
+                break; // Found a valid player
+            }
+            // Ensure description exists for this disconnected player
+            if (!room.descriptions[nextId]) {
+                room.descriptions[nextId] = '(Disconnected)';
+            }
+            room.currentSpeakerIndex++;
+            skipCount++;
+        }
+        
+        // Return with updated state
+        const submittedCount = Object.keys(room.descriptions).length;
+        const allSubmitted = room.currentSpeakerIndex >= room.speakingOrder.length;
+        
+        let nextSpeaker = null;
+        if (!allSubmitted && room.currentSpeakerIndex < room.speakingOrder.length) {
+            const nextSpeakerId = room.speakingOrder[room.currentSpeakerIndex];
+            const nextPlayer = room.players.get(nextSpeakerId);
+            if (nextPlayer) {
+                nextSpeaker = {
+                    id: nextSpeakerId,
+                    name: nextPlayer.name,
+                    index: room.currentSpeakerIndex
+                };
+            }
+        }
+        
+        return {
+            success: true,
+            room: room,
+            allSubmitted: allSubmitted,
+            submittedCount: submittedCount,
+            totalPlayers: room.players.size,
+            nextSpeaker: nextSpeaker,
+            skippedDisconnected: true
+        };
+    }
+    
+    // Only auto-submit if they haven't submitted yet
+    if (!room.descriptions[currentSpeakerId]) {
+        room.descriptions[currentSpeakerId] = '(No response)';
+        console.log(`[Game] Auto-submitted "(No response)" for ${currentPlayer.name} (turn timeout)`);
+    }
+    
+    // Move to next speaker
+    room.currentSpeakerIndex++;
+    
+    const submittedCount = Object.keys(room.descriptions).length;
+    const totalPlayers = room.players.size;
+    const allSubmitted = room.currentSpeakerIndex >= room.speakingOrder.length;
+    
+    let nextSpeaker = null;
+    if (!allSubmitted) {
+        const nextSpeakerId = room.speakingOrder[room.currentSpeakerIndex];
+        const nextPlayer = room.players.get(nextSpeakerId);
+        nextSpeaker = {
+            id: nextSpeakerId,
+            name: nextPlayer.name,
+            index: room.currentSpeakerIndex
+        };
+    }
+    
+    return {
+        success: true,
+        room: room,
+        allSubmitted: allSubmitted,
+        submittedCount: submittedCount,
+        totalPlayers: totalPlayers,
+        nextSpeaker: nextSpeaker
+    };
+}
+
+/**
+ * V1.1: Get current speaker information for the description phase.
+ * 
+ * @param {string} roomCode - The room code
+ * @returns {Object} - { success, currentSpeaker?, speakingOrder?, allComplete? }
+ */
+function getCurrentSpeaker(roomCode) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    if (room.phase !== 'description') {
+        return { success: false, error: 'INVALID_PHASE' };
+    }
+    
+    // FIX 2: Skip any disconnected players in the speaking order
+    let skipCount = 0;
+    const maxSkips = room.speakingOrder.length;
+    while (room.currentSpeakerIndex < room.speakingOrder.length && skipCount < maxSkips) {
+        const speakerId = room.speakingOrder[room.currentSpeakerIndex];
+        if (room.players.has(speakerId)) {
+            break; // Found a valid player
+        }
+        // Auto-submit for disconnected player if not already done
+        if (!room.descriptions[speakerId]) {
+            room.descriptions[speakerId] = '(Disconnected)';
+            console.log(`[Game] Skipping disconnected speaker, auto-submitted description`);
+        }
+        room.currentSpeakerIndex++;
+        skipCount++;
+    }
+    
+    const allComplete = room.currentSpeakerIndex >= room.speakingOrder.length;
+    
+    if (allComplete) {
+        return {
+            success: true,
+            allComplete: true,
+            currentSpeaker: null
+        };
+    }
+    
+    const currentSpeakerId = room.speakingOrder[room.currentSpeakerIndex];
+    const currentPlayer = room.players.get(currentSpeakerId);
+    
+    // FIX 2: Safety check - if player somehow doesn't exist, return allComplete
+    if (!currentPlayer) {
+        console.error(`[Game] Current speaker ${currentSpeakerId} not found in players`);
+        return {
+            success: true,
+            allComplete: true,
+            currentSpeaker: null
+        };
+    }
+    
+    return {
+        success: true,
+        allComplete: false,
+        currentSpeaker: {
+            id: currentSpeakerId,
+            name: currentPlayer.name,
+            index: room.currentSpeakerIndex
+        },
+        // FIX 2: Filter out disconnected players from speaking order display
+        speakingOrder: room.speakingOrder
+            .filter(id => room.players.has(id))
+            .map(id => ({
+                id: id,
+                name: room.players.get(id).name
+            })),
+        totalSpeakers: room.speakingOrder.filter(id => room.players.has(id)).length
+    };
+}
+
+/**
+ * V1.1: Get all descriptions with player attribution (not anonymized).
+ * Used for the voting phase where players can see who said what.
+ * 
+ * @param {string} roomCode - The room code
+ * @returns {Object} - { success, descriptions? }
+ */
+function getAttributedDescriptions(roomCode) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    // Build descriptions with player names (in speaking order)
+    const descriptions = room.speakingOrder.map(playerId => {
+        const player = room.players.get(playerId);
+        return {
+            playerId: playerId,
+            playerName: player ? player.name : 'Unknown',
+            description: room.descriptions[playerId] || '(No response)'
+        };
+    });
+    
+    return {
+        success: true,
+        descriptions: descriptions
+    };
+}
+
+/**
  * Gets anonymized descriptions for broadcasting.
  * 
  * PRIVACY GUARANTEE:
@@ -684,6 +1018,8 @@ function getAnonymizedDescriptions(roomCode) {
 /**
  * Transitions room from description to voting phase.
  * Initializes the votes storage.
+ * V1.1: Adds pendingVotes and confirmedVotes for two-step voting.
+ * V1.1: Adds chat for voting phase discussion.
  * 
  * @param {string} roomCode - The room code
  * @returns {Object} - { success, error?, room? }
@@ -700,7 +1036,21 @@ function transitionToVotingPhase(roomCode) {
     }
     
     room.phase = 'voting';
-    room.votes = {}; // { [voterId]: targetPlayerId }
+    room.votes = {};            // Legacy, still used for final tally
+    room.pendingVotes = {};     // V1.1: { [voterId]: targetPlayerId } - selected but not confirmed
+    room.confirmedVotes = {};   // V1.1: { [voterId]: targetPlayerId } - locked in
+    
+    // V1.1: Initialize chat
+    room.chat = {
+        messages: [],           // Array of { id, senderId, senderName, text, timestamp }
+        rateLimit: new Map()    // Map<playerId, timestamp[]> for rate limiting
+    };
+    
+    // FIX 3: Clear any stale postGame timeout from previous game
+    if (room.postGameTimeoutId) {
+        clearTimeout(room.postGameTimeoutId);
+        room.postGameTimeoutId = null;
+    }
     
     console.log(`[Game] Room ${roomCode} transitioned to voting phase`);
     
@@ -708,8 +1058,153 @@ function transitionToVotingPhase(roomCode) {
 }
 
 /**
+ * V1.1: Selects a vote target (does not confirm yet).
+ * Player can change their selection until they confirm.
+ * 
+ * @param {string} roomCode - The room code
+ * @param {string} voterId - The ID of the player voting
+ * @param {string} targetPlayerId - The ID of the player being voted for
+ * @returns {Object} - { success, error? }
+ */
+function selectVote(roomCode, voterId, targetPlayerId) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    if (room.phase !== 'voting') {
+        return { success: false, error: 'INVALID_PHASE' };
+    }
+    
+    if (!room.players.has(voterId)) {
+        return { success: false, error: 'VOTER_NOT_IN_ROOM' };
+    }
+    
+    if (!room.players.has(targetPlayerId)) {
+        return { success: false, error: 'TARGET_NOT_IN_ROOM' };
+    }
+    
+    if (voterId === targetPlayerId) {
+        return { success: false, error: 'CANNOT_VOTE_SELF' };
+    }
+    
+    // Cannot change selection after confirming
+    if (room.confirmedVotes[voterId]) {
+        return { success: false, error: 'ALREADY_CONFIRMED' };
+    }
+    
+    // Set or update pending selection
+    room.pendingVotes[voterId] = targetPlayerId;
+    
+    console.log(`[Game] ${room.players.get(voterId).name} selected ${room.players.get(targetPlayerId).name}`);
+    
+    return { success: true };
+}
+
+/**
+ * V1.1: Confirms the current vote selection.
+ * Once confirmed, the vote is locked and cannot be changed.
+ * 
+ * @param {string} roomCode - The room code
+ * @param {string} voterId - The ID of the player confirming their vote
+ * @returns {Object} - { success, error?, allConfirmed?, confirmedCount?, totalPlayers? }
+ */
+function confirmVote(roomCode, voterId) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    if (room.phase !== 'voting') {
+        return { success: false, error: 'INVALID_PHASE' };
+    }
+    
+    if (!room.players.has(voterId)) {
+        return { success: false, error: 'VOTER_NOT_IN_ROOM' };
+    }
+    
+    // Must have a pending selection
+    if (!room.pendingVotes[voterId]) {
+        return { success: false, error: 'NO_SELECTION' };
+    }
+    
+    // Already confirmed
+    if (room.confirmedVotes[voterId]) {
+        return { success: false, error: 'ALREADY_CONFIRMED' };
+    }
+    
+    // Lock in the vote
+    const targetPlayerId = room.pendingVotes[voterId];
+    room.confirmedVotes[voterId] = targetPlayerId;
+    room.votes[voterId] = targetPlayerId; // For calculateVoteResults compatibility
+    
+    const confirmedCount = Object.keys(room.confirmedVotes).length;
+    const totalPlayers = room.players.size;
+    const allConfirmed = confirmedCount === totalPlayers;
+    
+    const voter = room.players.get(voterId);
+    console.log(`[Game] ${voter.name} confirmed vote (${confirmedCount}/${totalPlayers})`);
+    
+    return {
+        success: true,
+        allConfirmed: allConfirmed,
+        confirmedCount: confirmedCount,
+        totalPlayers: totalPlayers
+    };
+}
+
+/**
+ * V1.1: Auto-confirms all pending votes when voting timer expires.
+ * Players who have not selected anyone are treated as abstaining.
+ * 
+ * @param {string} roomCode - The room code
+ * @returns {Object} - { success, error?, autoConfirmed? }
+ */
+function autoConfirmPendingVotes(roomCode) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    if (room.phase !== 'voting') {
+        return { success: false, error: 'INVALID_PHASE' };
+    }
+    
+    let autoConfirmed = 0;
+    
+    // Move all pending votes to confirmed votes
+    for (const [voterId, targetId] of Object.entries(room.pendingVotes || {})) {
+        // Only confirm if not already confirmed
+        if (!room.confirmedVotes[voterId]) {
+            room.confirmedVotes[voterId] = targetId;
+            room.votes[voterId] = targetId; // For calculateVoteResults compatibility
+            autoConfirmed++;
+            
+            const voter = room.players.get(voterId);
+            if (voter) {
+                console.log(`[Game] Auto-confirmed pending vote for ${voter.name}`);
+            }
+        }
+    }
+    
+    // Players with no pendingVotes are treated as abstaining (no action needed)
+    const abstainCount = room.players.size - Object.keys(room.confirmedVotes).length;
+    if (abstainCount > 0) {
+        console.log(`[Game] ${abstainCount} player(s) abstained (no selection made)`);
+    }
+    
+    console.log(`[Game] Auto-confirmed ${autoConfirmed} pending votes in room ${roomCode}`);
+    
+    return { success: true, autoConfirmed: autoConfirmed };
+}
+
+/**
  * Submits a vote from a player.
- * Validates phase, prevents self-voting, and checks for completion.
+ * @deprecated V1.1: Use selectVote + confirmVote instead.
+ * Kept for backward compatibility.
  * 
  * @param {string} roomCode - The room code
  * @param {string} voterId - The ID of the player voting
@@ -893,7 +1388,8 @@ function calculateVoteResults(roomCode) {
     voteSummary.sort((a, b) => b.votes - a.votes);
     
     // =========================================================================
-    // STEP 6: Transition to results phase
+    // STEP 6: Transition to results phase (then to postGame)
+    // V1.1: Room stays open after results for replay
     // =========================================================================
     room.phase = 'results';
     
@@ -929,6 +1425,236 @@ function calculateVoteResults(roomCode) {
  */
 function getRoom(roomCode) {
     return rooms.get(roomCode.toUpperCase()) || null;
+}
+
+/**
+ * FIX 3: Sets the postGame transition timeout ID for a room.
+ * This allows cancellation if Play Again is triggered during the delay.
+ * 
+ * @param {string} roomCode - The room code
+ * @param {number} timeoutId - The setTimeout ID
+ */
+function setPostGameTimeout(roomCode, timeoutId) {
+    const room = rooms.get(roomCode.toUpperCase());
+    if (room) {
+        room.postGameTimeoutId = timeoutId;
+    }
+}
+
+/**
+ * FIX 3: Clears the postGame transition timeout for a room.
+ * 
+ * @param {string} roomCode - The room code
+ */
+function clearPostGameTimeout(roomCode) {
+    const room = rooms.get(roomCode.toUpperCase());
+    if (room && room.postGameTimeoutId) {
+        clearTimeout(room.postGameTimeoutId);
+        room.postGameTimeoutId = null;
+        console.log(`[Game] Cleared postGame timeout for room ${roomCode}`);
+    }
+}
+
+/**
+ * V1.1: Transitions room from results to postGame phase.
+ * The room stays open for players to replay.
+ * 
+ * @param {string} roomCode - The room code
+ * @returns {Object} - { success, error?, room? }
+ */
+function transitionToPostGame(roomCode) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    if (room.phase !== 'results') {
+        return { success: false, error: 'INVALID_PHASE' };
+    }
+    
+    room.phase = 'postGame';
+    
+    console.log(`[Game] Room ${roomCode} transitioned to postGame phase`);
+    
+    return { success: true, room: room };
+}
+
+/**
+ * V1.1: Resets the room for a new game (Play Again).
+ * Keeps players intact but clears all game-specific state.
+ * 
+ * @param {string} roomCode - The room code
+ * @param {string} requestingPlayerId - Player ID requesting the reset (must be host)
+ * @returns {Object} - { success, error?, room? }
+ */
+function resetRoomForNewGame(roomCode, requestingPlayerId) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    // V1.1: Allow reset from results or postGame phase
+    if (room.phase !== 'results' && room.phase !== 'postGame') {
+        return { success: false, error: 'INVALID_PHASE' };
+    }
+    
+    // Only host can start a new game
+    if (room.hostId !== requestingPlayerId) {
+        return { success: false, error: 'NOT_HOST' };
+    }
+    
+    // Validation: Minimum player count
+    if (room.players.size < MIN_PLAYERS) {
+        return { 
+            success: false, 
+            error: 'NOT_ENOUGH_PLAYERS',
+            required: MIN_PLAYERS,
+            current: room.players.size
+        };
+    }
+    
+    // FIX 3: Clear postGame timeout if pending
+    if (room.postGameTimeoutId) {
+        clearTimeout(room.postGameTimeoutId);
+        console.log(`[Game] Cancelled pending postGame transition for room ${roomCode}`);
+    }
+    
+    // Clear game-specific state
+    delete room.topic;
+    delete room.word;
+    delete room.imposterId;
+    delete room.descriptions;
+    delete room.speakingOrder;
+    delete room.currentSpeakerIndex;
+    delete room.currentDescription;
+    delete room.votes;
+    delete room.pendingVotes;
+    delete room.confirmedVotes;
+    delete room.chat;
+    delete room.postGameTimeoutId;
+    
+    // Reset to lobby and increment game number
+    room.phase = 'lobby';
+    room.gameNumber = (room.gameNumber || 0) + 1;
+    
+    console.log(`[Game] Room ${roomCode} reset for game #${room.gameNumber + 1}`);
+    
+    return { success: true, room: room };
+}
+
+// =============================================================================
+// V1.1: CHAT FUNCTIONS
+// =============================================================================
+
+/**
+ * Rate limit configuration for chat
+ */
+const CHAT_RATE_LIMIT = {
+    maxMessages: 5,      // Max messages per window
+    windowMs: 10000      // 10 seconds
+};
+
+/**
+ * V1.1: Adds a chat message during voting phase.
+ * Includes rate limiting to prevent spam.
+ * 
+ * PRIVACY: Chat messages are visible to all players.
+ * SECURITY: Messages are sanitized (trimmed, length-limited).
+ * 
+ * @param {string} roomCode - The room code
+ * @param {string} playerId - The ID of the sender
+ * @param {string} text - The message text
+ * @returns {Object} - { success, error?, message? }
+ */
+function addChatMessage(roomCode, playerId, text) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    // Only allow chat during voting phase
+    if (room.phase !== 'voting') {
+        return { success: false, error: 'CHAT_NOT_AVAILABLE' };
+    }
+    
+    const player = room.players.get(playerId);
+    if (!player) {
+        return { success: false, error: 'PLAYER_NOT_IN_ROOM' };
+    }
+    
+    // Validate message
+    if (!text || typeof text !== 'string') {
+        return { success: false, error: 'INVALID_MESSAGE' };
+    }
+    
+    const trimmedText = text.trim();
+    if (trimmedText.length === 0) {
+        return { success: false, error: 'EMPTY_MESSAGE' };
+    }
+    
+    if (trimmedText.length > 200) {
+        return { success: false, error: 'MESSAGE_TOO_LONG' };
+    }
+    
+    // Rate limiting check
+    const now = Date.now();
+    const playerMessageTimes = room.chat.rateLimit.get(playerId) || [];
+    
+    // Remove old timestamps outside the window
+    const recentMessages = playerMessageTimes.filter(
+        time => now - time < CHAT_RATE_LIMIT.windowMs
+    );
+    
+    if (recentMessages.length >= CHAT_RATE_LIMIT.maxMessages) {
+        return { success: false, error: 'RATE_LIMITED' };
+    }
+    
+    // Add current timestamp
+    recentMessages.push(now);
+    room.chat.rateLimit.set(playerId, recentMessages);
+    
+    // Create message
+    const message = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        senderId: playerId,
+        senderName: player.name,
+        text: trimmedText,
+        timestamp: now
+    };
+    
+    room.chat.messages.push(message);
+    
+    // Keep only last 100 messages
+    if (room.chat.messages.length > 100) {
+        room.chat.messages = room.chat.messages.slice(-100);
+    }
+    
+    console.log(`[Chat] ${player.name}: ${trimmedText}`);
+    
+    return { success: true, message: message };
+}
+
+/**
+ * V1.1: Gets all chat messages for a room.
+ * 
+ * @param {string} roomCode - The room code
+ * @returns {Object} - { success, messages? }
+ */
+function getChatMessages(roomCode) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    if (!room.chat) {
+        return { success: true, messages: [] };
+    }
+    
+    return { success: true, messages: room.chat.messages };
 }
 
 /**
@@ -969,7 +1695,8 @@ function serializeRoom(room) {
             name: p.name
             // Note: socketId is NOT sent to clients
         })),
-        playerCount: room.players.size
+        playerCount: room.players.size,
+        gameNumber: room.gameNumber || 0   // V1.1: Include game count
     };
     
     // Include topic if game has started (topic is public knowledge)
@@ -1000,9 +1727,21 @@ module.exports = {
     transitionToDescriptionPhase,
     submitDescription,
     autoSubmitMissingDescriptions,
+    autoSubmitCurrentSpeaker,
+    getCurrentSpeaker,
     getAnonymizedDescriptions,
+    getAttributedDescriptions,
     transitionToVotingPhase,
+    selectVote,
+    confirmVote,
+    autoConfirmPendingVotes,
     submitVote,
     calculateVoteResults,
+    transitionToPostGame,
+    resetRoomForNewGame,
+    setPostGameTimeout,
+    clearPostGameTimeout,
+    addChatMessage,
+    getChatMessages,
     MIN_PLAYERS
 };

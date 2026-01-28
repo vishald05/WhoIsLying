@@ -35,6 +35,19 @@ export function GameProvider({ children }) {
     const [hasSubmittedDescription, setHasSubmittedDescription] = useState(false);
     const [hasVoted, setHasVoted] = useState(false);
     
+    // V1.1: Sequential description phase state
+    const [speakingOrder, setSpeakingOrder] = useState([]);
+    const [currentSpeaker, setCurrentSpeaker] = useState(null);
+    const [liveDescriptions, setLiveDescriptions] = useState([]); // Descriptions submitted so far
+    
+    // V1.1: Enhanced voting state
+    const [selectedVote, setSelectedVote] = useState(null);       // Current selection (not confirmed)
+    const [hasConfirmedVote, setHasConfirmedVote] = useState(false);
+    const [confirmProgress, setConfirmProgress] = useState({ count: 0, total: 0 });
+    
+    // V1.1: Chat state
+    const [chatMessages, setChatMessages] = useState([]);
+    
     // Results state
     const [results, setResults] = useState(null);
     
@@ -117,25 +130,65 @@ export function GameProvider({ children }) {
             if (data.phase === 'description') {
                 setHasSubmittedDescription(false);
                 setSubmissionProgress({ count: 0, total: data.room.playerCount });
+                // V1.1: Initialize sequential description state
+                if (data.speakingOrder) {
+                    setSpeakingOrder(data.speakingOrder);
+                    setLiveDescriptions([]);
+                }
             }
         });
         
-        // Description submitted (progress update)
-        socket.on('game:descriptionSubmitted', (data) => {
-            setSubmissionProgress({ count: data.submittedCount, total: data.totalPlayers });
+        // V1.1: Speaker turn changed
+        socket.on('game:speakerTurn', (data) => {
+            setCurrentSpeaker({
+                id: data.speakerId,
+                name: data.speakerName,
+                index: data.speakerIndex,
+                total: data.totalSpeakers
+            });
         });
         
-        // Description phase ended - receive anonymized descriptions
+        // Description submitted (progress update)
+        // V1.1: Now includes attribution
+        socket.on('game:descriptionSubmitted', (data) => {
+            setSubmissionProgress({ count: data.submittedCount, total: data.totalPlayers });
+            // V1.1: Add to live descriptions list
+            if (data.playerId && data.playerName !== undefined) {
+                setLiveDescriptions(prev => [...prev, {
+                    playerId: data.playerId,
+                    playerName: data.playerName,
+                    description: data.description,
+                    isAutoSubmit: data.isAutoSubmit
+                }]);
+            }
+        });
+        
+        // Description phase ended - receive descriptions
         socket.on('game:descriptionPhaseEnded', (data) => {
             setRoom(data.room);
             setDescriptions(data.descriptions);
+            // V1.1: Reset voting state
             setHasVoted(false);
+            setSelectedVote(null);
+            setHasConfirmedVote(false);
             setVoteProgress({ count: 0, total: data.room.playerCount });
+            setConfirmProgress({ count: 0, total: data.room.playerCount });
+            setChatMessages([]); // Clear chat for new voting phase
         });
         
         // Vote submitted (progress update)
         socket.on('game:voteSubmitted', (data) => {
             setVoteProgress({ count: data.votedCount, total: data.totalPlayers });
+        });
+        
+        // V1.1: Vote confirmed (progress update)
+        socket.on('game:voteConfirmed', (data) => {
+            setConfirmProgress({ count: data.confirmedCount, total: data.totalPlayers });
+        });
+        
+        // V1.1: Chat message received
+        socket.on('chat:message', (data) => {
+            setChatMessages(prev => [...prev, data.message]);
         });
         
         // Game results
@@ -152,6 +205,29 @@ export function GameProvider({ children }) {
             setTimer({ phase: null, remainingSeconds: 0 });
         });
         
+        // V1.1: Game reset (Play Again)
+        socket.on('game:reset', (data) => {
+            setRoom(data.room);
+            // Reset all game state
+            setIsImposter(false);
+            setSecretWord(null);
+            setTopic(null);
+            setDescriptions([]);
+            setSubmissionProgress({ count: 0, total: 0 });
+            setVoteProgress({ count: 0, total: 0 });
+            setHasSubmittedDescription(false);
+            setHasVoted(false);
+            setSpeakingOrder([]);
+            setCurrentSpeaker(null);
+            setLiveDescriptions([]);
+            setSelectedVote(null);
+            setHasConfirmedVote(false);
+            setConfirmProgress({ count: 0, total: 0 });
+            setChatMessages([]);
+            setResults(null);
+            setTimer({ phase: null, remainingSeconds: 0 });
+        });
+        
         // Timer tick - server sends countdown every second
         socket.on('game:timer', (data) => {
             setTimer({ phase: data.phase, remainingSeconds: data.remainingSeconds });
@@ -165,10 +241,14 @@ export function GameProvider({ children }) {
             socket.off('game:roleAssigned');
             socket.off('game:started');
             socket.off('game:phaseChanged');
+            socket.off('game:speakerTurn');
             socket.off('game:descriptionSubmitted');
             socket.off('game:descriptionPhaseEnded');
             socket.off('game:voteSubmitted');
+            socket.off('game:voteConfirmed');
+            socket.off('chat:message');
             socket.off('game:results');
+            socket.off('game:reset');
             socket.off('game:timer');
         };
     }, []);
@@ -198,6 +278,89 @@ export function GameProvider({ children }) {
                 if (response.success) {
                     setPlayer(response.player);
                     setRoom(response.room);
+                    
+                    // V1.1: Handle rejoin state restoration
+                    if (response.isRejoin && response.rejoinState) {
+                        const state = response.rejoinState;
+                        
+                        // Restore role information
+                        if (state.isImposter !== undefined) {
+                            setIsImposter(state.isImposter);
+                        }
+                        if (state.topic) {
+                            setTopic(state.topic);
+                        }
+                        if (state.word) {
+                            setSecretWord(state.word);
+                        }
+                        
+                        // Restore description phase state
+                        if (state.hasSubmittedDescription !== undefined) {
+                            setHasSubmittedDescription(state.hasSubmittedDescription);
+                        }
+                        if (state.submissionProgress) {
+                            setSubmissionProgress(state.submissionProgress);
+                        }
+                        
+                        // V1.1: Restore sequential description state
+                        if (state.speakingOrder) {
+                            setSpeakingOrder(state.speakingOrder);
+                        }
+                        if (state.currentSpeakerIndex !== undefined && state.speakingOrder) {
+                            const speaker = state.speakingOrder[state.currentSpeakerIndex];
+                            if (speaker) {
+                                setCurrentSpeaker({
+                                    id: speaker.id,
+                                    name: speaker.name,
+                                    index: state.currentSpeakerIndex,
+                                    total: state.speakingOrder.length
+                                });
+                            }
+                        }
+                        if (state.liveDescriptions) {
+                            setLiveDescriptions(state.liveDescriptions);
+                        }
+                        
+                        // Restore descriptions (for voting/results phase)
+                        if (state.descriptions) {
+                            setDescriptions(state.descriptions);
+                        }
+                        
+                        // Restore voting state
+                        if (state.hasVoted !== undefined) {
+                            setHasVoted(state.hasVoted);
+                            setHasConfirmedVote(state.hasVoted);
+                        }
+                        if (state.voteProgress) {
+                            setVoteProgress(state.voteProgress);
+                        }
+                        
+                        // V1.1: Restore two-step voting state
+                        if (state.selectedVote) {
+                            setSelectedVote(state.selectedVote);
+                        }
+                        if (state.confirmProgress) {
+                            setConfirmProgress(state.confirmProgress);
+                        }
+                        
+                        // V1.1: Restore chat messages
+                        if (state.chatMessages) {
+                            setChatMessages(state.chatMessages);
+                        }
+                        
+                        // Restore results
+                        if (state.results) {
+                            setResults({
+                                votedOutPlayer: state.results.voteSummary?.[0] || null,
+                                imposter: state.results.imposter,
+                                playersWin: state.results.imposter && 
+                                    state.results.voteSummary?.[0]?.playerId === state.results.imposter.id,
+                                voteSummary: state.results.voteSummary,
+                                secretWord: state.results.secretWord
+                            });
+                        }
+                    }
+                    
                     resolve(response);
                 } else {
                     setError(response.error);
@@ -270,6 +433,69 @@ export function GameProvider({ children }) {
         });
     }, []);
     
+    // V1.1: Select vote target (without confirming)
+    const selectVote = useCallback((targetPlayerId) => {
+        return new Promise((resolve, reject) => {
+            socket.emit('game:selectVote', { targetPlayerId }, (response) => {
+                if (response.success) {
+                    setSelectedVote(targetPlayerId);
+                    resolve(response);
+                } else {
+                    setError(response.error);
+                    reject(response.error);
+                }
+            });
+        });
+    }, []);
+    
+    // V1.1: Confirm vote selection
+    const confirmVote = useCallback(() => {
+        return new Promise((resolve, reject) => {
+            socket.emit('game:confirmVote', (response) => {
+                if (response.success) {
+                    setHasConfirmedVote(true);
+                    setHasVoted(true); // For compatibility
+                    setConfirmProgress({ 
+                        count: response.confirmedCount, 
+                        total: response.totalPlayers 
+                    });
+                    resolve(response);
+                } else {
+                    setError(response.error);
+                    reject(response.error);
+                }
+            });
+        });
+    }, []);
+    
+    // V1.1: Play Again action
+    const playAgain = useCallback(() => {
+        return new Promise((resolve, reject) => {
+            socket.emit('game:playAgain', (response) => {
+                if (response.success) {
+                    resolve(response);
+                } else {
+                    setError(response.error);
+                    reject(response.error);
+                }
+            });
+        });
+    }, []);
+    
+    // V1.1: Send chat message
+    const sendChatMessage = useCallback((text) => {
+        return new Promise((resolve, reject) => {
+            socket.emit('chat:send', { text }, (response) => {
+                if (response.success) {
+                    resolve(response);
+                } else {
+                    // Don't set error for rate limiting - just reject quietly
+                    reject(response.error);
+                }
+            });
+        });
+    }, []);
+    
     const clearError = useCallback(() => {
         setError(null);
     }, []);
@@ -307,6 +533,19 @@ export function GameProvider({ children }) {
         hasSubmittedDescription,
         hasVoted,
         
+        // V1.1: Sequential description phase
+        speakingOrder,
+        currentSpeaker,
+        liveDescriptions,
+        
+        // V1.1: Enhanced voting
+        selectedVote,
+        hasConfirmedVote,
+        confirmProgress,
+        
+        // V1.1: Chat
+        chatMessages,
+        
         // Results
         results,
         
@@ -323,7 +562,11 @@ export function GameProvider({ children }) {
         startGame,
         startDescriptionPhase,
         submitDescription,
-        submitVote
+        submitVote,
+        selectVote,
+        confirmVote,
+        sendChatMessage,
+        playAgain
     };
 
     return (

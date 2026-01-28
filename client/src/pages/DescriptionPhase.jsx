@@ -1,24 +1,28 @@
 /**
- * Description Phase Page
+ * Description Phase Page (V1.1 Sequential Mode)
  * 
- * Players submit their description of the secret word.
- * - Text input for description
- * - Shows submission progress
- * - Imposter must guess and blend in
- * - Timer auto-submits "(No response)" after 60 seconds
+ * Turn-based description phase where players speak one at a time.
+ * - Shows current speaker and turn order
+ * - Only active speaker can submit
+ * - Descriptions are shown with player names (not anonymous)
+ * - Timer counts down 10 seconds per speaker
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useGame } from '../GameContext';
 
 export default function DescriptionPhase() {
     const { 
+        player,
         topic,
         isImposter,
         secretWord,
         submitDescription,
         hasSubmittedDescription,
         submissionProgress,
+        speakingOrder,
+        currentSpeaker,
+        liveDescriptions,
         timer,
         error,
         clearError 
@@ -27,8 +31,21 @@ export default function DescriptionPhase() {
     const [description, setDescription] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
+    // Check if current player is the active speaker
+    const isMyTurn = currentSpeaker && player && currentSpeaker.id === player.id;
+    
+    // Check if player has already spoken
+    const hasSpoken = liveDescriptions.some(d => d.playerId === player?.id);
+
+    // Reset description input when it becomes the player's turn
+    useEffect(() => {
+        if (isMyTurn) {
+            setDescription('');
+        }
+    }, [isMyTurn]);
+
     const handleSubmit = async () => {
-        if (!description.trim()) return;
+        if (!isMyTurn) return;
         
         setSubmitting(true);
         clearError();
@@ -46,8 +63,9 @@ export default function DescriptionPhase() {
         <div className="page description-phase">
             <h2>Description Phase</h2>
             
-            {timer.phase === 'description' && timer.remainingSeconds > 0 && (
-                <div className={`timer ${timer.remainingSeconds <= 10 ? 'timer-warning' : ''}`}>
+            {/* Timer - shows per-turn countdown */}
+            {timer.phase === 'descriptionTurn' && timer.remainingSeconds > 0 && (
+                <div className={`timer ${timer.remainingSeconds <= 3 ? 'timer-warning' : ''}`}>
                     ⏱️ {timer.remainingSeconds}s
                 </div>
             )}
@@ -56,6 +74,7 @@ export default function DescriptionPhase() {
                 <div className="error">{error}</div>
             )}
             
+            {/* Topic and word reminder */}
             <div className="topic-display">
                 <span>Topic:</span>
                 <strong>{topic}</strong>
@@ -73,7 +92,46 @@ export default function DescriptionPhase() {
                 </div>
             )}
             
-            {!hasSubmittedDescription ? (
+            {/* Speaking order display */}
+            <div className="speaking-order">
+                <h3>Speaking Order</h3>
+                <div className="order-list">
+                    {speakingOrder.map((speaker, index) => {
+                        const hasSpokenAlready = liveDescriptions.some(d => d.playerId === speaker.id);
+                        const isCurrent = currentSpeaker && speaker.id === currentSpeaker.id;
+                        const isMe = player && speaker.id === player.id;
+                        
+                        return (
+                            <div 
+                                key={speaker.id}
+                                className={`speaker-item ${isCurrent ? 'current' : ''} ${hasSpokenAlready ? 'done' : ''} ${isMe ? 'is-me' : ''}`}
+                            >
+                                <span className="speaker-number">{index + 1}.</span>
+                                <span className="speaker-name">
+                                    {speaker.name}
+                                    {isMe && ' (You)'}
+                                </span>
+                                {hasSpokenAlready && <span className="check">✓</span>}
+                                {isCurrent && !hasSpokenAlready && <span className="speaking">🎤</span>}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+            
+            {/* Current speaker callout */}
+            {currentSpeaker && (
+                <div className={`current-speaker-banner ${isMyTurn ? 'your-turn' : ''}`}>
+                    {isMyTurn ? (
+                        <strong>🎤 Your turn to speak!</strong>
+                    ) : (
+                        <span>Waiting for <strong>{currentSpeaker.name}</strong> to speak...</span>
+                    )}
+                </div>
+            )}
+            
+            {/* Input form - only visible for current speaker */}
+            {isMyTurn && !hasSpoken && (
                 <div className="description-form">
                     <div className="form-group">
                         <label>Your Description</label>
@@ -84,26 +142,52 @@ export default function DescriptionPhase() {
                             rows={3}
                             maxLength={200}
                             disabled={submitting}
+                            autoFocus
                         />
                     </div>
                     
                     <button 
                         onClick={handleSubmit}
-                        disabled={!description.trim() || submitting}
+                        disabled={submitting}
                         className="primary"
                     >
                         {submitting ? 'Submitting...' : 'Submit Description'}
                     </button>
+                    <p className="hint">Leave empty to skip (will submit "No response")</p>
                 </div>
-            ) : (
+            )}
+            
+            {/* Waiting message for non-current players */}
+            {!isMyTurn && !hasSpoken && (
+                <div className="waiting-message">
+                    <p>👀 Watch the descriptions and prepare yours!</p>
+                </div>
+            )}
+            
+            {/* Already spoken message */}
+            {hasSpoken && (
                 <div className="submitted-message">
-                    <p>✅ Description submitted!</p>
+                    <p>✅ You have spoken!</p>
                     <p>Waiting for other players...</p>
                 </div>
             )}
             
+            {/* Live descriptions feed */}
+            {liveDescriptions.length > 0 && (
+                <div className="live-descriptions">
+                    <h3>Descriptions So Far</h3>
+                    <ul>
+                        {liveDescriptions.map((d, index) => (
+                            <li key={index} className={d.isAutoSubmit ? 'auto-submit' : ''}>
+                                <strong>{d.playerName}:</strong> "{d.description}"
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            
             <div className="progress">
-                Submitted: {submissionProgress.count} / {submissionProgress.total}
+                Completed: {submissionProgress.count} / {submissionProgress.total}
             </div>
         </div>
     );

@@ -1,5 +1,5 @@
 /**
- * Results Page
+ * Results Page (V1.1)
  * 
  * Shows the final game results.
  * - Who was voted out
@@ -7,6 +7,7 @@
  * - Win/lose message
  * - Vote summary
  * - Secret word reveal
+ * - Auto-transitions to postGame after 5 seconds
  */
 
 import { useGame } from '../GameContext';
@@ -77,8 +78,8 @@ export default function Results() {
                 </ul>
             </div>
             
-            <p className="restart-hint">
-                Refresh the page to play again!
+            <p className="transition-hint">
+                Moving to lobby in a few seconds...
             </p>
         </div>
     );

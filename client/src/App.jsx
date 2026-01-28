@@ -12,6 +12,7 @@ import RoleReveal from './pages/RoleReveal';
 import DescriptionPhase from './pages/DescriptionPhase';
 import VotingPhase from './pages/VotingPhase';
 import Results from './pages/Results';
+import PostGame from './pages/PostGame';
 import './App.css';
 
 export default function App() {
@@ -36,6 +37,8 @@ export default function App() {
                 return <VotingPhase />;
             case 'results':
                 return <Results />;
+            case 'postGame':
+                return <PostGame />;
             default:
                 return <Home />;
         }

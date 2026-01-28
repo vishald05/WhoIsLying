@@ -24,9 +24,10 @@
 // =============================================================================
 
 const PHASE_DURATIONS = {
-    roleReveal: 10,   // seconds
-    description: 60,  // seconds
-    voting: 30        // seconds
+    roleReveal: 10,           // seconds
+    description: 60,          // seconds (legacy, not used in v1.1 sequential mode)
+    descriptionTurn: 10,      // seconds per speaker in sequential description phase
+    voting: 60                // seconds (increased from 30 in v1.1)
 };
 
 // =============================================================================

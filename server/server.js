@@ -146,7 +146,18 @@ io.on('connection', (socket) => {
                     descriptions: rejoinState.descriptions,
                     hasVoted: rejoinState.hasVoted,
                     voteProgress: rejoinState.voteProgress,
-                    results: rejoinState.results
+                    results: rejoinState.results,
+                    // V1.1: Sequential description phase
+                    speakingOrder: rejoinState.speakingOrder,
+                    currentSpeakerIndex: rejoinState.currentSpeakerIndex,
+                    liveDescriptions: rejoinState.liveDescriptions,
+                    // V1.1: Two-step voting
+                    selectedVote: rejoinState.selectedVote,
+                    confirmProgress: rejoinState.confirmProgress,
+                    // V1.1: Chat
+                    chatMessages: rejoinState.chatMessages,
+                    // V1.1: Game number
+                    gameNumber: rejoinState.gameNumber
                 };
             }
             
@@ -314,6 +325,49 @@ io.on('connection', (socket) => {
     });
 
     // -------------------------------------------------------------------------
+    // PLAY AGAIN (V1.1)
+    // Client sends: (no data needed, uses socket.id to verify host)
+    // Server responds: { success, error?, room? }
+    // 
+    // Resets the room to lobby state for a new game.
+    // Only the host can initiate Play Again.
+    // -------------------------------------------------------------------------
+    socket.on('game:playAgain', (callback) => {
+        const playerData = roomManager.getPlayerBySocketId(socket.id);
+        
+        if (!playerData) {
+            return callback({ success: false, error: 'NOT_IN_ROOM' });
+        }
+        
+        const { room, player } = playerData;
+        
+        // Reset the room for a new game
+        const result = roomManager.resetRoomForNewGame(room.code, player.id);
+        
+        if (!result.success) {
+            return callback({ 
+                success: false, 
+                error: result.error,
+                required: result.required,
+                current: result.current
+            });
+        }
+        
+        // Broadcast the reset to all players
+        io.to(room.code).emit('game:reset', {
+            room: roomManager.serializeRoom(result.room),
+            gameNumber: result.room.gameNumber
+        });
+        
+        callback({
+            success: true,
+            room: roomManager.serializeRoom(result.room)
+        });
+        
+        console.log(`[Game] Room ${room.code} reset for new game by ${player.name}`);
+    });
+
+    // -------------------------------------------------------------------------
     // TRANSITION TO DESCRIPTION PHASE
     // Client sends: (no data needed, typically called after role reveal timeout)
     // Server responds: { success, error?, room? }
@@ -348,16 +402,16 @@ io.on('connection', (socket) => {
     // Client sends: { text: string }
     // Server responds: { success, error?, submittedCount?, totalPlayers? }
     // 
-    // PRIVACY ENFORCEMENT:
-    // - Server stores description with playerId (for internal tracking)
-    // - When broadcasting, descriptions are ANONYMIZED and SHUFFLED
-    // - No way to correlate description to player from client side
+    // V1.1 SEQUENTIAL MODE:
+    // - Only the current speaker can submit
+    // - Description is broadcast with player attribution (not anonymous)
+    // - Advances to next speaker after submission
     // -------------------------------------------------------------------------
     socket.on('game:submitDescription', (data, callback) => {
         const { text } = data;
         
         // Validate input
-        if (!text || typeof text !== 'string') {
+        if (text === undefined || text === null) {
             return callback({ success: false, error: 'INVALID_DESCRIPTION' });
         }
         
@@ -377,11 +431,18 @@ io.on('connection', (socket) => {
             return callback({ success: false, error: result.error });
         }
         
-        // Notify all players about submission progress (without revealing who submitted)
+        // Clear turn timer since player submitted
+        timerManager.clearTimer(room.code);
+        
+        // V1.1: Broadcast with attribution (player name and description visible to all)
         io.to(room.code).emit('game:descriptionSubmitted', {
             submittedCount: result.submittedCount,
-            totalPlayers: result.totalPlayers
-            // PRIVACY: No playerId, no description content in broadcast
+            totalPlayers: result.totalPlayers,
+            // V1.1: Include attribution
+            playerId: result.submittedBy.id,
+            playerName: result.submittedBy.name,
+            description: result.description,
+            isAutoSubmit: false
         });
         
         // Respond to submitter
@@ -391,24 +452,35 @@ io.on('connection', (socket) => {
             totalPlayers: result.totalPlayers
         });
         
-        // If all players have submitted, transition to voting phase
+        // V1.1: Check if all players have had their turn
         if (result.allSubmitted) {
-            // Clear description timer since everyone submitted
-            timerManager.clearTimer(room.code);
+            console.log(`[Game] All speakers done in room ${room.code} - transitioning to voting`);
             handleDescriptionPhaseComplete(room.code);
+        } else {
+            // Advance to next speaker
+            const speakerResult = roomManager.getCurrentSpeaker(room.code);
+            if (speakerResult.success && !speakerResult.allComplete) {
+                io.to(room.code).emit('game:speakerTurn', {
+                    speakerId: speakerResult.currentSpeaker.id,
+                    speakerName: speakerResult.currentSpeaker.name,
+                    speakerIndex: speakerResult.currentSpeaker.index,
+                    totalSpeakers: speakerResult.totalSpeakers
+                });
+                
+                console.log(`[Game] Next speaker in room ${room.code}: ${speakerResult.currentSpeaker.name}`);
+                
+                // Start timer for next speaker
+                startSpeakerTurnTimer(room.code);
+            }
         }
     });
 
     // -------------------------------------------------------------------------
-    // SUBMIT VOTE
+    // SUBMIT VOTE (V1.0 Legacy - kept for compatibility)
     // Client sends: { targetPlayerId: string }
     // Server responds: { success, error?, votedCount?, totalPlayers? }
     // 
-    // PRIVACY ENFORCEMENT:
-    // - Votes are stored on server with voter ID (for validation)
-    // - During voting, NO vote information is broadcast to clients
-    // - Only after ALL votes are in, results are revealed
-    // - This prevents vote manipulation based on others' votes
+    // V1.1: Use selectVote + confirmVote instead for two-step voting
     // -------------------------------------------------------------------------
     socket.on('game:submitVote', (data, callback) => {
         const { targetPlayerId } = data;
@@ -455,6 +527,115 @@ io.on('connection', (socket) => {
             timerManager.clearTimer(room.code);
             handleVotingComplete(room.code);
         }
+    });
+
+    // -------------------------------------------------------------------------
+    // SELECT VOTE (V1.1)
+    // Client sends: { targetPlayerId: string }
+    // Server responds: { success, error? }
+    // 
+    // Selects a vote target without confirming. Can be changed until confirmed.
+    // Selection is NOT broadcast to other players for privacy.
+    // -------------------------------------------------------------------------
+    socket.on('game:selectVote', (data, callback) => {
+        const { targetPlayerId } = data;
+        
+        if (!targetPlayerId || typeof targetPlayerId !== 'string') {
+            return callback({ success: false, error: 'INVALID_TARGET' });
+        }
+        
+        const playerData = roomManager.getPlayerBySocketId(socket.id);
+        
+        if (!playerData) {
+            return callback({ success: false, error: 'NOT_IN_ROOM' });
+        }
+        
+        const { room, player } = playerData;
+        
+        const result = roomManager.selectVote(room.code, player.id, targetPlayerId);
+        
+        if (!result.success) {
+            return callback({ success: false, error: result.error });
+        }
+        
+        // PRIVACY: Do NOT broadcast selection to other players
+        callback({ success: true });
+    });
+
+    // -------------------------------------------------------------------------
+    // CONFIRM VOTE (V1.1)
+    // Client sends: (no data needed)
+    // Server responds: { success, error?, confirmedCount?, totalPlayers? }
+    // 
+    // Locks in the current vote selection. Cannot be changed after confirmation.
+    // Only the confirmation count is broadcast, not who confirmed.
+    // -------------------------------------------------------------------------
+    socket.on('game:confirmVote', (callback) => {
+        const playerData = roomManager.getPlayerBySocketId(socket.id);
+        
+        if (!playerData) {
+            return callback({ success: false, error: 'NOT_IN_ROOM' });
+        }
+        
+        const { room, player } = playerData;
+        
+        const result = roomManager.confirmVote(room.code, player.id);
+        
+        if (!result.success) {
+            return callback({ success: false, error: result.error });
+        }
+        
+        // Broadcast confirmation progress (PRIVACY: only count, not who)
+        io.to(room.code).emit('game:voteConfirmed', {
+            confirmedCount: result.confirmedCount,
+            totalPlayers: result.totalPlayers
+        });
+        
+        callback({
+            success: true,
+            confirmedCount: result.confirmedCount,
+            totalPlayers: result.totalPlayers
+        });
+        
+        // V1.1: End voting early if all players confirmed
+        if (result.allConfirmed) {
+            timerManager.clearTimer(room.code);
+            handleVotingComplete(room.code);
+        }
+    });
+
+    // -------------------------------------------------------------------------
+    // SEND CHAT MESSAGE (V1.1)
+    // Client sends: { text: string }
+    // Server responds: { success, error?, message? }
+    // 
+    // Chat is only available during voting phase.
+    // Rate limited to 5 messages per 10 seconds.
+    // PRIVACY: Chat does NOT reveal any vote information.
+    // -------------------------------------------------------------------------
+    socket.on('chat:send', (data, callback) => {
+        const { text } = data;
+        
+        const playerData = roomManager.getPlayerBySocketId(socket.id);
+        
+        if (!playerData) {
+            return callback({ success: false, error: 'NOT_IN_ROOM' });
+        }
+        
+        const { room, player } = playerData;
+        
+        const result = roomManager.addChatMessage(room.code, player.id, text);
+        
+        if (!result.success) {
+            return callback({ success: false, error: result.error });
+        }
+        
+        // Broadcast the message to all players in the room
+        io.to(room.code).emit('chat:message', {
+            message: result.message
+        });
+        
+        callback({ success: true, message: result.message });
     });
 });
 
@@ -529,7 +710,7 @@ function startPhaseTimer(roomCode, phase) {
 
 /**
  * Transitions to description phase with timer.
- * Used by both manual host trigger and timer expiration.
+ * V1.1: Uses sequential turn-based system with per-speaker timer.
  * 
  * @param {string} roomCode - The room code
  */
@@ -544,25 +725,99 @@ function transitionToDescriptionPhaseWithTimer(roomCode) {
         return;
     }
     
-    // Broadcast phase change to all players
+    // V1.1: Get first speaker info
+    const firstSpeakerId = result.speakingOrder[0].id;
+    const firstSpeaker = result.speakingOrder[0];
+    
+    // Broadcast phase change with speaking order
     io.to(roomCode).emit('game:phaseChanged', {
         phase: 'description',
-        room: roomManager.serializeRoom(result.room)
+        room: roomManager.serializeRoom(result.room),
+        speakingOrder: result.speakingOrder,
+        currentSpeakerIndex: 0
     });
     
-    console.log(`[Game] Description phase started in room ${roomCode}`);
+    // V1.1: Emit first speaker turn
+    io.to(roomCode).emit('game:speakerTurn', {
+        speakerId: firstSpeaker.id,
+        speakerName: firstSpeaker.name,
+        speakerIndex: 0,
+        totalSpeakers: result.speakingOrder.length
+    });
     
-    // Start description phase timer
-    startPhaseTimer(roomCode, 'description');
+    console.log(`[Game] Description phase started in room ${roomCode} - First speaker: ${firstSpeaker.name}`);
+    
+    // V1.1: Start per-speaker timer (10 seconds)
+    startSpeakerTurnTimer(roomCode);
+}
+
+/**
+ * V1.1: Starts a 10-second timer for the current speaker's turn.
+ * 
+ * @param {string} roomCode - The room code
+ */
+function startSpeakerTurnTimer(roomCode) {
+    timerManager.startTimer(roomCode, 'descriptionTurn', onTimerTick, (roomCode, phase) => {
+        // Turn timeout - auto-submit and advance
+        handleSpeakerTurnTimeout(roomCode);
+    });
+}
+
+/**
+ * V1.1: Handles when a speaker's turn times out.
+ * Auto-submits "(No response)" and advances to next speaker.
+ * 
+ * @param {string} roomCode - The room code
+ */
+function handleSpeakerTurnTimeout(roomCode) {
+    const result = roomManager.autoSubmitCurrentSpeaker(roomCode);
+    
+    if (!result.success) {
+        console.error(`[Game] Failed to auto-submit for speaker: ${result.error}`);
+        return;
+    }
+    
+    // Get the player who timed out for the broadcast
+    const room = roomManager.getRoom(roomCode);
+    const timedOutIndex = room.currentSpeakerIndex - 1;
+    const timedOutId = room.speakingOrder[timedOutIndex];
+    const timedOutPlayer = room.players.get(timedOutId);
+    
+    // Broadcast the auto-submitted description
+    io.to(roomCode).emit('game:descriptionSubmitted', {
+        submittedCount: result.submittedCount,
+        totalPlayers: result.totalPlayers,
+        // V1.1: Include attribution
+        playerId: timedOutId,
+        playerName: timedOutPlayer.name,
+        description: '(No response)',
+        isAutoSubmit: true
+    });
+    
+    if (result.allSubmitted) {
+        // All speakers done - move to voting
+        console.log(`[Game] All speakers done in room ${roomCode} - transitioning to voting`);
+        handleDescriptionPhaseComplete(roomCode);
+    } else {
+        // Advance to next speaker
+        io.to(roomCode).emit('game:speakerTurn', {
+            speakerId: result.nextSpeaker.id,
+            speakerName: result.nextSpeaker.name,
+            speakerIndex: result.nextSpeaker.index,
+            totalSpeakers: result.totalPlayers
+        });
+        
+        console.log(`[Game] Next speaker in room ${roomCode}: ${result.nextSpeaker.name}`);
+        
+        // Start timer for next speaker
+        startSpeakerTurnTimer(roomCode);
+    }
 }
 
 /**
  * Handles description phase timeout.
+ * V1.1: This is now only called as a fallback - primary timeout is per-speaker.
  * Auto-submits for players who didn't submit, then transitions to voting.
- * 
- * AUTO-SUBMISSION LOGIC:
- * - Players who did not submit get "(No response)" as their description
- * - This ensures voting phase can proceed even if some players are AFK
  * 
  * @param {string} roomCode - The room code
  */
@@ -597,19 +852,37 @@ function handleDescriptionTimeout(roomCode) {
  * - They are NOT considered in tie-breaking logic
  * - Results are calculated only from actual votes cast
  * 
+ * FIX 1: Auto-confirm any pending votes before calculating results
+ * 
  * @param {string} roomCode - The room code
  */
 function handleVotingTimeout(roomCode) {
-    console.log(`[Game] Voting timeout for room ${roomCode} - calculating results with abstains`);
+    console.log(`[Game] Voting timeout for room ${roomCode}`);
+    
+    // FIX 1: Auto-confirm any pending votes before calculating results
+    // This ensures players who selected but didn't confirm have their votes counted
+    const autoConfirmResult = roomManager.autoConfirmPendingVotes(roomCode);
+    if (autoConfirmResult.success && autoConfirmResult.autoConfirmed > 0) {
+        // Broadcast updated confirmation count
+        const room = roomManager.getRoom(roomCode);
+        if (room) {
+            io.to(roomCode).emit('game:voteConfirmed', {
+                confirmedCount: Object.keys(room.confirmedVotes || {}).length,
+                totalPlayers: room.players.size
+            });
+        }
+    }
     
     // Calculate results with whatever votes we have
-    // Abstaining players (those who didn't vote) are ignored in the count
+    // Abstaining players (those who didn't select anyone) are ignored in the count
     handleVotingComplete(roomCode);
 }
 
 /**
  * Handles completion of voting phase.
  * Calculates results and broadcasts the winner.
+ * V1.1: Transitions to postGame after a delay for players to see results.
+ * FIX 3: Tracks timeout ID for cancellation if Play Again triggered.
  * 
  * RESULT REVEAL:
  * - voteSummary shows each player's vote count
@@ -640,23 +913,38 @@ function handleVotingComplete(roomCode) {
     });
     
     console.log(`[Game] Results broadcast for room ${roomCode}`);
+    
+    // FIX 3: V1.1 - Transition to postGame after 5 seconds, with tracked timeout
+    const postGameTimeoutId = setTimeout(() => {
+        const postGameResult = roomManager.transitionToPostGame(roomCode);
+        if (postGameResult.success) {
+            io.to(roomCode).emit('game:phaseChanged', {
+                phase: 'postGame',
+                room: roomManager.serializeRoom(postGameResult.room)
+            });
+            console.log(`[Game] Room ${roomCode} now in postGame phase`);
+        }
+        // Clear the stored timeout ID after execution
+        roomManager.clearPostGameTimeout(roomCode);
+    }, 5000);
+    
+    // FIX 3: Store timeout ID so it can be cancelled if Play Again is triggered
+    roomManager.setPostGameTimeout(roomCode, postGameTimeoutId);
 }
 
 /**
  * Handles completion of description phase.
- * Transitions to voting and broadcasts anonymized descriptions.
+ * Transitions to voting and broadcasts descriptions.
  * 
- * ANONYMITY GUARANTEE:
- * - Descriptions are extracted without player IDs
- * - Order is randomized (shuffled) before broadcasting
- * - No way to correlate description to player
+ * V1.1: Descriptions are now ATTRIBUTED (not anonymous).
+ * Players can see who said what during voting.
  */
 function handleDescriptionPhaseComplete(roomCode) {
     // Clear any existing timer
     timerManager.clearTimer(roomCode);
     
-    // Get anonymized descriptions (shuffled, no player IDs)
-    const descResult = roomManager.getAnonymizedDescriptions(roomCode);
+    // V1.1: Get attributed descriptions (with player names)
+    const descResult = roomManager.getAttributedDescriptions(roomCode);
     
     if (!descResult.success) {
         console.error(`[Game] Failed to get descriptions for room ${roomCode}`);
@@ -672,13 +960,12 @@ function handleDescriptionPhaseComplete(roomCode) {
     }
     
     // Broadcast to all players
-    // PRIVACY: descriptions array contains ONLY { description: string }
-    // NO playerId, NO socketId, NO imposter hints, SHUFFLED order
+    // V1.1: descriptions now include player attribution
     io.to(roomCode).emit('game:descriptionPhaseEnded', {
         phase: 'voting',
         room: roomManager.serializeRoom(transitionResult.room),
         descriptions: descResult.descriptions
-        // descriptions format: [{ description: "text" }, { description: "text" }, ...]
+        // V1.1 format: [{ playerId, playerName, description }, ...]
     });
     
     console.log(`[Game] Description phase ended in room ${roomCode}, ${descResult.descriptions.length} descriptions collected`);
@@ -792,16 +1079,29 @@ function handlePlayerLeave(socket, callback = null) {
             timerManager.clearTimer(roomCode);
             handleDescriptionPhaseComplete(roomCode);
         }
-        
-        // Voting phase: Check if all remaining players have voted
-        if (phaseCleanupResult.phase === 'voting' && phaseCleanupResult.votingComplete) {
-            console.log(`[Game] All votes submitted after disconnect - completing phase`);
+        // V1.1: If current speaker disconnected, advance to next speaker
+        else if (phaseCleanupResult.phase === 'description' && phaseCleanupResult.wasCurrentSpeaker) {
+            console.log(`[Game] Current speaker disconnected - advancing turn`);
             timerManager.clearTimer(roomCode);
-            handleVotingComplete(roomCode);
+            
+            // Notify about the auto-submitted description
+            io.to(roomCode).emit('game:descriptionSubmitted', {
+                playerId: player.id,
+                playerName: player.name,
+                description: '(Disconnected)',
+                isAutoSubmit: true,
+                submittedCount: Object.keys(updatedRoom.descriptions || {}).length,
+                totalPlayers: updatedRoom.players.size
+            });
+            
+            // Start next speaker turn or complete if done
+            if (phaseCleanupResult.newSpeakerIndex >= (updatedRoom.speakingOrder?.length || 0)) {
+                handleDescriptionPhaseComplete(roomCode);
+            } else {
+                startSpeakerTurnTimer(roomCode);
+            }
         }
-        
-        // Update progress counts for remaining players
-        if (phaseCleanupResult.phase === 'description') {
+        else if (phaseCleanupResult.phase === 'description') {
             const submittedCount = Object.keys(updatedRoom.descriptions || {}).length;
             io.to(roomCode).emit('game:descriptionSubmitted', {
                 submittedCount: submittedCount,
@@ -809,10 +1109,17 @@ function handlePlayerLeave(socket, callback = null) {
             });
         }
         
-        if (phaseCleanupResult.phase === 'voting') {
-            const votedCount = Object.keys(updatedRoom.votes || {}).length;
-            io.to(roomCode).emit('game:voteSubmitted', {
-                votedCount: votedCount,
+        // Voting phase: Check if all remaining players have voted
+        if (phaseCleanupResult.phase === 'voting' && phaseCleanupResult.votingComplete) {
+            console.log(`[Game] All votes confirmed after disconnect - completing phase`);
+            timerManager.clearTimer(roomCode);
+            handleVotingComplete(roomCode);
+        }
+        else if (phaseCleanupResult.phase === 'voting') {
+            // V1.1: Use confirmedVotes for progress
+            const confirmedCount = Object.keys(updatedRoom.confirmedVotes || {}).length;
+            io.to(roomCode).emit('game:voteConfirmed', {
+                confirmedCount: confirmedCount,
                 totalPlayers: updatedRoom.players.size
             });
         }
