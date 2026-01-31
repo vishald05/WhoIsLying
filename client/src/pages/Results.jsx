@@ -91,6 +91,23 @@ export default function Results() {
                         )}
                     </div>
                     
+                    {/* Imposter Reveal Card - Visual focal point */}
+                    <div className="imposter-reveal-card">
+                        <p className="reveal-label">🕵️ The Imposter Was</p>
+                        <div className="imposter-avatar-container">
+                            <Avatar 
+                                seed={imposter.id || imposter.name}
+                                size={96}
+                                className="avatar-lg imposter-reveal-avatar"
+                                highlighted
+                            />
+                        </div>
+                        <h3 className="imposter-name">{imposter.name}</h3>
+                        <p className="secret-word-reveal">
+                            Secret Word: <strong>{secretWord}</strong>
+                        </p>
+                    </div>
+                    
                     {/* Mobile-only: Vote summary and details */}
                     <div className="mobile-only">
                         <div className="result-details">

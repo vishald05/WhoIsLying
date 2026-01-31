@@ -205,6 +205,16 @@ export default function DescriptionPhase() {
                                 <textarea
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        // Enter without Shift = submit
+                                        // Shift + Enter = new line (default behavior)
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            if (!submitting) {
+                                                handleSubmit();
+                                            }
+                                        }
+                                    }}
                                     placeholder="Describe the word without saying it..."
                                     rows={3}
                                     maxLength={200}
@@ -220,7 +230,7 @@ export default function DescriptionPhase() {
                             >
                                 {submitting ? 'Submitting...' : 'Submit Description'}
                             </button>
-                            <p className="hint">Leave empty to skip (will submit "No response")</p>
+                            <p className="hint">Press Enter to submit • Shift+Enter for new line</p>
                         </div>
                     )}
                     

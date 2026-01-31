@@ -1625,3 +1625,162 @@ button:disabled {
     flex-wrap: wrap;
 }
 
+/* =============================================================================
+   V1.2: IMPOSTER REVEAL CARD
+   
+   Dramatic reveal of the imposter at game end.
+   Features:
+   - Centered card layout
+   - Large avatar with glow animation
+   - Bold name typography
+   - Scale-in entrance animation
+   ============================================================================= */
+
+.imposter-reveal-card {
+    text-align: center;
+    padding: 25px 20px;
+    margin: 20px 0;
+    background: linear-gradient(135deg, #1a1a2e 0%, #2a1a2a 100%);
+    border: 2px solid #e94560;
+    border-radius: 16px;
+    box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
+    animation: imposter-card-entrance 0.6s ease-out;
+}
+
+@keyframes imposter-card-entrance {
+    0% {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    50% {
+        transform: scale(1.02);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.imposter-reveal-card .reveal-label {
+    font-size: 1rem;
+    color: #aaa;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.imposter-avatar-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 15px;
+}
+
+.imposter-reveal-avatar {
+    border-width: 3px !important;
+    animation: imposter-avatar-glow 2s ease-in-out infinite;
+}
+
+@keyframes imposter-avatar-glow {
+    0%, 100% {
+        box-shadow: 0 0 20px rgba(233, 69, 96, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 40px rgba(233, 69, 96, 0.8), 0 0 60px rgba(233, 69, 96, 0.4);
+    }
+}
+
+.imposter-reveal-card .imposter-name {
+    font-size: 1.8rem;
+    color: #e94560;
+    margin: 10px 0;
+    font-weight: bold;
+    text-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+}
+
+.imposter-reveal-card .secret-word-reveal {
+    font-size: 1rem;
+    color: #888;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #333;
+}
+
+.imposter-reveal-card .secret-word-reveal strong {
+    color: #4ade80;
+    font-size: 1.1rem;
+}
+
+/* Desktop: Horizontal layout for imposter card */
+@media (min-width: 1024px) {
+    .imposter-reveal-card {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        gap: 30px;
+        padding: 30px 40px;
+    }
+    
+    .imposter-reveal-card .reveal-label {
+        position: absolute;
+        top: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1a1a2e;
+        padding: 5px 15px;
+        border-radius: 20px;
+        border: 1px solid #e94560;
+        margin: 0;
+    }
+    
+    .imposter-avatar-container {
+        margin-bottom: 0;
+    }
+    
+    .imposter-reveal-card .imposter-name {
+        font-size: 2rem;
+        margin: 0;
+    }
+    
+    .imposter-reveal-card .secret-word-reveal {
+        margin: 0;
+        padding: 0 0 0 30px;
+        border-top: none;
+        border-left: 1px solid #333;
+    }
+    
+    /* Position wrapper for label */
+    .imposter-reveal-card {
+        position: relative;
+        margin-top: 30px;
+    }
+}
+
+/* Mobile: Keep vertical stacked layout */
+@media (max-width: 1023px) {
+    .imposter-reveal-card .imposter-name {
+        font-size: 1.5rem;
+    }
+    
+    .imposter-reveal-avatar {
+        width: 80px !important;
+        height: 80px !important;
+        min-width: 80px !important;
+        min-height: 80px !important;
+    }
+}
+
+/* =============================================================================
+   V1.2: KEYBOARD HINT STYLING
+   ============================================================================= */
+
+.description-form .hint {
+    text-align: center;
+    color: #666;
+    font-size: 0.85rem;
+    margin-top: 10px;
+}
+
+
+}
+
