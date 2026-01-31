@@ -1369,3 +1369,259 @@ button:disabled {
     }
 }
 
+/* =============================================================================
+   V1.2: AVATAR COMPONENT STYLES
+   
+   DiceBear SVG avatars with states:
+   - Default: Circular with subtle border
+   - Speaking: Glow/pulse animation
+   - Disconnected: Grayscale filter
+   - Highlighted: Special border (imposter reveal)
+   ============================================================================= */
+
+.avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #0f3460;
+    border: 2px solid #1a4a7a;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+}
+
+/* Ensure SVG fills the container properly */
+.avatar svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Speaking state - subtle glow and pulse */
+.avatar-speaking {
+    border-color: #e94560;
+    box-shadow: 0 0 15px rgba(233, 69, 96, 0.6);
+    animation: avatar-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes avatar-pulse {
+    0%, 100% {
+        box-shadow: 0 0 10px rgba(233, 69, 96, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(233, 69, 96, 0.8);
+    }
+}
+
+/* Disconnected state - grayscale */
+.avatar-disconnected {
+    filter: grayscale(100%);
+    opacity: 0.5;
+    border-color: #444;
+}
+
+/* Highlighted state - special attention (e.g., imposter reveal) */
+.avatar-highlighted {
+    border-color: #e94560;
+    border-width: 3px;
+    box-shadow: 0 0 20px rgba(233, 69, 96, 0.7);
+}
+
+/* Avatar sizes - mobile default is smaller */
+.avatar-sm {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+}
+
+.avatar-md {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+}
+
+.avatar-lg {
+    width: 56px !important;
+    height: 56px !important;
+    min-width: 56px !important;
+    min-height: 56px !important;
+}
+
+/* Desktop: Slightly larger avatars */
+@media (min-width: 1024px) {
+    .avatar-sm {
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+        min-height: 32px !important;
+    }
+    
+    .avatar-md {
+        width: 48px !important;
+        height: 48px !important;
+        min-width: 48px !important;
+        min-height: 48px !important;
+    }
+    
+    .avatar-lg {
+        width: 64px !important;
+        height: 64px !important;
+        min-width: 64px !important;
+        min-height: 64px !important;
+    }
+}
+
+/* -----------------------------------------------------------------------------
+   AVATAR INTEGRATION INTO EXISTING COMPONENTS
+   ----------------------------------------------------------------------------- */
+
+/* Player list items with avatar */
+.player-list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.player-list .player-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Speaker item with avatar */
+.speaker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.speaker-item .avatar {
+    margin-right: 2px;
+}
+
+/* Chat message with avatar */
+.chat-message-with-avatar {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.chat-message-with-avatar .chat-content {
+    flex: 1;
+}
+
+.chat-message-with-avatar.own {
+    flex-direction: row-reverse;
+}
+
+.chat-message-with-avatar.own .chat-content {
+    text-align: right;
+}
+
+/* Vote button with avatar */
+.vote-button-with-avatar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+}
+
+.vote-button-with-avatar .player-name {
+    flex: 1;
+}
+
+.vote-button-with-avatar .check-mark {
+    color: #4ade80;
+    font-weight: bold;
+}
+
+/* Results player card with avatar */
+.result-player-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 15px;
+    background: #0f3460;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.result-player-card .player-details {
+    flex: 1;
+}
+
+.result-player-card.imposter {
+    border: 2px solid #e94560;
+    background: linear-gradient(135deg, #1a1a2e 0%, #2a1a2a 100%);
+}
+
+/* Vote summary list with avatars */
+.vote-summary ul li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.vote-summary ul li.imposter {
+    border: 1px solid #e94560;
+    background: linear-gradient(135deg, rgba(233, 69, 96, 0.1) 0%, rgba(139, 21, 56, 0.1) 100%);
+}
+
+.vote-summary .player-vote-info {
+    flex: 1;
+}
+
+/* Descriptions list with avatars */
+.descriptions-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.descriptions-list .description-content {
+    flex: 1;
+}
+
+/* Live descriptions with avatars */
+.live-descriptions li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.live-descriptions .description-content {
+    flex: 1;
+}
+
+/* Chat message with avatar styling */
+.chat-message-with-avatar {
+    margin-bottom: 10px;
+    padding: 6px 0;
+}
+
+.chat-message-with-avatar .chat-content {
+    background: #0f3460;
+    padding: 8px 12px;
+    border-radius: 12px;
+    max-width: 80%;
+}
+
+.chat-message-with-avatar.own .chat-content {
+    background: #1a4a7a;
+}
+
+/* Player info span in lists */
+.player-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+

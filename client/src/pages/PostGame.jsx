@@ -18,6 +18,7 @@
  */
 
 import { useGame } from '../GameContext';
+import Avatar from '../components/Avatar';
 
 export default function PostGame() {
     const { 
@@ -55,9 +56,16 @@ export default function PostGame() {
                     <ul>
                         {room.players.map((p) => (
                             <li key={p.id} className={p.id === player?.id ? 'you' : ''}>
-                                <span>{p.name}</span>
-                                {p.id === room.hostId && <span className="host-badge">👑 Host</span>}
-                                {p.id === player?.id && <span className="you-badge">(You)</span>}
+                                <Avatar 
+                                    seed={p.id || p.name}
+                                    size={40}
+                                    className="avatar-md"
+                                />
+                                <span className="player-info">
+                                    {p.name}
+                                    {p.id === room.hostId && <span className="host-badge">👑 Host</span>}
+                                    {p.id === player?.id && <span className="you-badge">(You)</span>}
+                                </span>
                             </li>
                         ))}
                     </ul>
@@ -110,9 +118,16 @@ export default function PostGame() {
                             <ul>
                                 {room.players.map((p) => (
                                     <li key={p.id} className={p.id === player?.id ? 'you' : ''}>
-                                        <span>{p.name}</span>
-                                        {p.id === room.hostId && <span className="host-badge">👑 Host</span>}
-                                        {p.id === player?.id && <span className="you-badge">(You)</span>}
+                                        <Avatar 
+                                            seed={p.id || p.name}
+                                            size={36}
+                                            className="avatar-sm"
+                                        />
+                                        <span className="player-info">
+                                            {p.name}
+                                            {p.id === room.hostId && <span className="host-badge">👑 Host</span>}
+                                            {p.id === player?.id && <span className="you-badge">(You)</span>}
+                                        </span>
                                     </li>
                                 ))}
                             </ul>

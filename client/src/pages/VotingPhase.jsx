@@ -22,6 +22,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useGame } from '../GameContext';
+import Avatar from '../components/Avatar';
 
 export default function VotingPhase() {
     const { 
@@ -105,10 +106,17 @@ export default function VotingPhase() {
                     chatMessages.map((msg) => (
                         <div 
                             key={msg.id} 
-                            className={`chat-message ${msg.senderId === player?.id ? 'own' : ''}`}
+                            className={`chat-message-with-avatar ${msg.senderId === player?.id ? 'own' : ''}`}
                         >
-                            <span className="chat-sender">{msg.senderName}:</span>
-                            <span className="chat-text">{msg.text}</span>
+                            <Avatar 
+                                seed={msg.senderId || msg.senderName}
+                                size={28}
+                                className="avatar-sm"
+                            />
+                            <div className="chat-content">
+                                <span className="chat-sender">{msg.senderName}:</span>
+                                <span className="chat-text">{msg.text}</span>
+                            </div>
                         </div>
                     ))
                 )}
@@ -144,14 +152,21 @@ export default function VotingPhase() {
                             key={p.id}
                             onClick={() => handleSelect(p.id)}
                             disabled={p.id === player.id || hasConfirmedVote}
-                            className={`
+                            className={`vote-button-with-avatar
                                 ${p.id === player.id ? 'disabled' : ''}
                                 ${selectedVote === p.id ? 'selected' : ''}
                             `}
                         >
-                            {p.name}
-                            {p.id === player.id && ' (You)'}
-                            {selectedVote === p.id && ' ✓'}
+                            <Avatar 
+                                seed={p.id || p.name}
+                                size={32}
+                                className="avatar-sm"
+                            />
+                            <span className="player-name">
+                                {p.name}
+                                {p.id === player.id && ' (You)'}
+                            </span>
+                            {selectedVote === p.id && <span className="check-mark">✓</span>}
                         </button>
                     ))}
                 </div>
@@ -206,7 +221,14 @@ export default function VotingPhase() {
                         <ul>
                             {descriptions.map((d, index) => (
                                 <li key={index}>
-                                    <strong>{d.playerName}:</strong> "{d.description}"
+                                    <Avatar 
+                                        seed={d.playerId || d.playerName}
+                                        size={28}
+                                        className="avatar-sm"
+                                    />
+                                    <span className="description-content">
+                                        <strong>{d.playerName}:</strong> "{d.description}"
+                                    </span>
                                 </li>
                             ))}
                         </ul>
@@ -228,14 +250,21 @@ export default function VotingPhase() {
                                                     key={p.id}
                                                     onClick={() => handleSelect(p.id)}
                                                     disabled={p.id === player.id}
-                                                    className={`
+                                                    className={`vote-button-with-avatar
                                                         ${p.id === player.id ? 'disabled' : ''}
                                                         ${selectedVote === p.id ? 'selected' : ''}
                                                     `}
                                                 >
-                                                    {p.name}
-                                                    {p.id === player.id && ' (You)'}
-                                                    {selectedVote === p.id && ' ✓'}
+                                                    <Avatar 
+                                                        seed={p.id || p.name}
+                                                        size={32}
+                                                        className="avatar-sm"
+                                                    />
+                                                    <span className="player-name">
+                                                        {p.name}
+                                                        {p.id === player.id && ' (You)'}
+                                                    </span>
+                                                    {selectedVote === p.id && <span className="check-mark">✓</span>}
                                                 </button>
                                             ))}
                                         </div>

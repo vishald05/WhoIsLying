@@ -1,5 +1,5 @@
 /**
- * Description Phase Page (V1.2 Desktop Layout)
+ * Description Phase Page (V1.2 Desktop Layout + Avatars)
  * 
  * Turn-based description phase where players speak one at a time.
  * 
@@ -10,6 +10,10 @@
  *   - Center panel: Word reminder, description input, live descriptions
  *   - Right panel: Timer, phase instructions, progress
  * 
+ * V1.2 AVATARS:
+ * - Speaking order shows avatars with speaking state
+ * - Live descriptions include player avatars
+ * 
  * IMPLEMENTATION:
  * - Uses CSS classes (game-panel-left/center/right) for positioning
  * - Mobile-only / desktop-only classes handle visibility
@@ -18,6 +22,7 @@
 
 import { useState, useEffect } from 'react';
 import { useGame } from '../GameContext';
+import Avatar from '../components/Avatar';
 
 export default function DescriptionPhase() {
     const { 
@@ -87,6 +92,12 @@ export default function DescriptionPhase() {
                                     key={speaker.id}
                                     className={`speaker-item ${isCurrent ? 'current' : ''} ${hasSpokenAlready ? 'done' : ''} ${isMe ? 'is-me' : ''}`}
                                 >
+                                    <Avatar 
+                                        seed={speaker.id || speaker.name}
+                                        size={32}
+                                        className="avatar-sm"
+                                        speaking={isCurrent && !hasSpokenAlready}
+                                    />
                                     <span className="speaker-number">{index + 1}.</span>
                                     <span className="speaker-name">
                                         {speaker.name}
@@ -155,6 +166,12 @@ export default function DescriptionPhase() {
                                             key={speaker.id}
                                             className={`speaker-item ${isCurrent ? 'current' : ''} ${hasSpokenAlready ? 'done' : ''} ${isMe ? 'is-me' : ''}`}
                                         >
+                                            <Avatar 
+                                                seed={speaker.id || speaker.name}
+                                                size={28}
+                                                className="avatar-sm"
+                                                speaking={isCurrent && !hasSpokenAlready}
+                                            />
                                             <span className="speaker-number">{index + 1}.</span>
                                             <span className="speaker-name">
                                                 {speaker.name}
@@ -229,7 +246,14 @@ export default function DescriptionPhase() {
                             <ul>
                                 {liveDescriptions.map((d, index) => (
                                     <li key={index} className={d.isAutoSubmit ? 'auto-submit' : ''}>
-                                        <strong>{d.playerName}:</strong> "{d.description}"
+                                        <Avatar 
+                                            seed={d.playerId || d.playerName}
+                                            size={28}
+                                            className="avatar-sm"
+                                        />
+                                        <span className="description-content">
+                                            <strong>{d.playerName}:</strong> "{d.description}"
+                                        </span>
                                     </li>
                                 ))}
                             </ul>

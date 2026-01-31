@@ -20,6 +20,7 @@
  */
 
 import { useGame } from '../GameContext';
+import Avatar from '../components/Avatar';
 
 export default function Results() {
     const { results, player } = useGame();
@@ -50,9 +51,17 @@ export default function Results() {
                     <h3>🗳️ Vote Summary</h3>
                     <ul>
                         {voteSummary.map((entry) => (
-                            <li key={entry.playerId}>
-                                {entry.playerName}: {entry.votes} vote{entry.votes !== 1 ? 's' : ''}
-                                {entry.playerId === imposter.id && <span className="imposter-tag"> 🎭</span>}
+                            <li key={entry.playerId} className={entry.playerId === imposter.id ? 'imposter' : ''}>
+                                <Avatar 
+                                    seed={entry.playerId || entry.playerName}
+                                    size={32}
+                                    className="avatar-sm"
+                                    highlighted={entry.playerId === imposter.id}
+                                />
+                                <span className="player-vote-info">
+                                    {entry.playerName}: {entry.votes} vote{entry.votes !== 1 ? 's' : ''}
+                                    {entry.playerId === imposter.id && <span className="imposter-tag"> 🎭</span>}
+                                </span>
                             </li>
                         ))}
                     </ul>
@@ -105,9 +114,17 @@ export default function Results() {
                             <h3>Vote Summary</h3>
                             <ul>
                                 {voteSummary.map((entry) => (
-                                    <li key={entry.playerId}>
-                                        {entry.playerName}: {entry.votes} vote{entry.votes !== 1 ? 's' : ''}
-                                        {entry.playerId === imposter.id && <span className="imposter-tag"> 🎭</span>}
+                                    <li key={entry.playerId} className={entry.playerId === imposter.id ? 'imposter' : ''}>
+                                        <Avatar 
+                                            seed={entry.playerId || entry.playerName}
+                                            size={28}
+                                            className="avatar-sm"
+                                            highlighted={entry.playerId === imposter.id}
+                                        />
+                                        <span className="player-vote-info">
+                                            {entry.playerName}: {entry.votes} vote{entry.votes !== 1 ? 's' : ''}
+                                            {entry.playerId === imposter.id && <span className="imposter-tag"> 🎭</span>}
+                                        </span>
                                     </li>
                                 ))}
                             </ul>
