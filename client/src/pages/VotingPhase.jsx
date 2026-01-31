@@ -38,7 +38,10 @@ export default function VotingPhase() {
         sendChatMessage,
         timer,
         error,
-        clearError 
+        clearError,
+        // V1.3: Revote state
+        votingRound,
+        allowedVoteTargets
     } = useGame();
 
     const [chatInput, setChatInput] = useState('');
@@ -94,6 +97,16 @@ export default function VotingPhase() {
     const selectedPlayer = selectedVote 
         ? room.players.find(p => p.id === selectedVote) 
         : null;
+    
+    // V1.3: Check if a player is a valid vote target during revotes
+    const isValidTarget = (playerId) => {
+        if (playerId === player.id) return false; // Can't vote for yourself
+        if (!allowedVoteTargets) return true; // No restrictions = all players valid
+        return allowedVoteTargets.some(t => t.id === playerId);
+    };
+    
+    // V1.3: Check if we're in a revote round
+    const isRevote = votingRound > 1;
 
     // Chat section component (reused in mobile and desktop layouts)
     const ChatSection = () => (
@@ -145,30 +158,42 @@ export default function VotingPhase() {
                 LEFT PANEL - Players List for Voting (Desktop: left sidebar)
                 ================================================================= */}
             <div className="game-panel-left">
-                <h3>🗳️ Vote for Imposter</h3>
+                <h3>🗳️ {isRevote ? `Revote Round ${votingRound}` : 'Vote for Imposter'}</h3>
+                
+                {/* V1.3: Revote notice */}
+                {isRevote && (
+                    <div className="revote-notice">
+                        ⚖️ There was a tie! Vote again among the tied players.
+                    </div>
+                )}
+                
                 <div className="vote-buttons">
-                    {room.players.map((p) => (
-                        <button
-                            key={p.id}
-                            onClick={() => handleSelect(p.id)}
-                            disabled={p.id === player.id || hasConfirmedVote}
-                            className={`vote-button-with-avatar
-                                ${p.id === player.id ? 'disabled' : ''}
-                                ${selectedVote === p.id ? 'selected' : ''}
-                            `}
-                        >
-                            <Avatar 
-                                seed={p.id || p.name}
-                                size={32}
-                                className="avatar-sm"
-                            />
-                            <span className="player-name">
-                                {p.name}
-                                {p.id === player.id && ' (You)'}
-                            </span>
-                            {selectedVote === p.id && <span className="check-mark">✓</span>}
-                        </button>
-                    ))}
+                    {room.players.map((p) => {
+                        const canVote = isValidTarget(p.id);
+                        return (
+                            <button
+                                key={p.id}
+                                onClick={() => canVote && handleSelect(p.id)}
+                                disabled={!canVote || hasConfirmedVote}
+                                className={`vote-button-with-avatar
+                                    ${!canVote ? 'disabled' : ''}
+                                    ${selectedVote === p.id ? 'selected' : ''}
+                                    ${!canVote && p.id !== player.id ? 'not-in-revote' : ''}
+                                `}
+                            >
+                                <Avatar 
+                                    seed={p.id || p.name}
+                                    size={32}
+                                    className="avatar-sm"
+                                />
+                                <span className="player-name">
+                                    {p.name}
+                                    {p.id === player.id && ' (You)'}
+                                </span>
+                                {selectedVote === p.id && <span className="check-mark">✓</span>}
+                            </button>
+                        );
+                    })}
                 </div>
                 
                 {/* Confirm section - shown in left panel on desktop */}
@@ -200,7 +225,14 @@ export default function VotingPhase() {
                 ================================================================= */}
             <div className="game-panel-center">
                 <div className="page voting-phase">
-                    <h2>Voting Phase</h2>
+                    <h2>{isRevote ? `Revote Round ${votingRound}` : 'Voting Phase'}</h2>
+                    
+                    {/* V1.3: Revote notice for mobile */}
+                    {isRevote && (
+                        <div className="revote-notice mobile-only">
+                            ⚖️ There was a tie! Vote again among the tied players.
+                        </div>
+                    )}
                     
                     {/* Timer - shown here on mobile */}
                     <div className="mobile-only">
@@ -245,28 +277,32 @@ export default function VotingPhase() {
                                         
                                         {/* Player selection buttons */}
                                         <div className="vote-buttons">
-                                            {room.players.map((p) => (
-                                                <button
-                                                    key={p.id}
-                                                    onClick={() => handleSelect(p.id)}
-                                                    disabled={p.id === player.id}
-                                                    className={`vote-button-with-avatar
-                                                        ${p.id === player.id ? 'disabled' : ''}
-                                                        ${selectedVote === p.id ? 'selected' : ''}
-                                                    `}
-                                                >
-                                                    <Avatar 
-                                                        seed={p.id || p.name}
-                                                        size={32}
-                                                        className="avatar-sm"
-                                                    />
-                                                    <span className="player-name">
-                                                        {p.name}
-                                                        {p.id === player.id && ' (You)'}
-                                                    </span>
-                                                    {selectedVote === p.id && <span className="check-mark">✓</span>}
-                                                </button>
-                                            ))}
+                                            {room.players.map((p) => {
+                                                const canVote = isValidTarget(p.id);
+                                                return (
+                                                    <button
+                                                        key={p.id}
+                                                        onClick={() => canVote && handleSelect(p.id)}
+                                                        disabled={!canVote}
+                                                        className={`vote-button-with-avatar
+                                                            ${!canVote ? 'disabled' : ''}
+                                                            ${selectedVote === p.id ? 'selected' : ''}
+                                                            ${!canVote && p.id !== player.id ? 'not-in-revote' : ''}
+                                                        `}
+                                                    >
+                                                        <Avatar 
+                                                            seed={p.id || p.name}
+                                                            size={32}
+                                                            className="avatar-sm"
+                                                        />
+                                                        <span className="player-name">
+                                                            {p.name}
+                                                            {p.id === player.id && ' (You)'}
+                                                        </span>
+                                                        {selectedVote === p.id && <span className="check-mark">✓</span>}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                         
                                         {/* Confirm button */}
@@ -327,6 +363,9 @@ export default function VotingPhase() {
                 
                 <div className="progress-section">
                     <h3>📊 Voting Progress</h3>
+                    {isRevote && (
+                        <p className="voting-round-indicator">Round {votingRound} of 3</p>
+                    )}
                     <div className="progress">
                         Confirmed: {confirmProgress.count} / {confirmProgress.total}
                     </div>
@@ -340,9 +379,19 @@ export default function VotingPhase() {
                 <div className="phase-info">
                     <h3>📝 Instructions</h3>
                     <div className="info-box">
-                        <p>1. Read the descriptions carefully</p>
-                        <p>2. Discuss in chat who seems suspicious</p>
-                        <p>3. Select and confirm your vote</p>
+                        {isRevote ? (
+                            <>
+                                <p>⚖️ <strong>Tie breaker!</strong></p>
+                                <p>Only vote for tied players</p>
+                                <p>Max 3 rounds before random elimination</p>
+                            </>
+                        ) : (
+                            <>
+                                <p>1. Read the descriptions carefully</p>
+                                <p>2. Discuss in chat who seems suspicious</p>
+                                <p>3. Select and confirm your vote</p>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

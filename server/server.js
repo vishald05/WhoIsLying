@@ -929,6 +929,7 @@ function handleVotingTimeout(roomCode) {
  * Handles completion of voting phase.
  * Calculates results and broadcasts the winner.
  * V1.1: Transitions to postGame after a delay for players to see results.
+ * V1.3: Handles revotes on ties instead of ending the game.
  * FIX 3: Tracks timeout ID for cancellation if Play Again triggered.
  * 
  * RESULT REVEAL:
@@ -942,8 +943,33 @@ function handleVotingComplete(roomCode) {
     
     const result = roomManager.calculateVoteResults(roomCode);
     
+    // =========================================================================
+    // V1.3: Handle revote on tie
+    // =========================================================================
+    if (result.isRevote) {
+        console.log(`[Game] Tie detected in room ${roomCode} - starting revote round ${result.votingRound}`);
+        
+        // Emit revote event to all players
+        io.to(roomCode).emit('game:revoteStarted', {
+            votingRound: result.votingRound,
+            allowedVoteTargets: result.allowedVoteTargets,
+            tiedPlayers: result.tiedPlayers
+        });
+        
+        // Restart voting timer with room settings
+        const room = roomManager.getRoom(roomCode);
+        const votingDuration = room?.settings?.votingTime || 60;
+        startPhaseTimer(roomCode, 'voting', votingDuration);
+        
+        console.log(`[Game] Revote timer started for room ${roomCode} - ${votingDuration}s`);
+        return;
+    }
+    
+    // =========================================================================
+    // Normal result flow (no tie)
+    // =========================================================================
     if (!result.success) {
-        console.error(`[Game] Failed to calculate results for room ${roomCode}`);
+        console.error(`[Game] Failed to calculate results for room ${roomCode}: ${result.error}`);
         return;
     }
     

@@ -48,6 +48,10 @@ export function GameProvider({ children }) {
     // V1.1: Chat state
     const [chatMessages, setChatMessages] = useState([]);
     
+    // V1.3: Revote state
+    const [votingRound, setVotingRound] = useState(1);
+    const [allowedVoteTargets, setAllowedVoteTargets] = useState(null); // null = all players, array = restricted
+    
     // Results state
     const [results, setResults] = useState(null);
     
@@ -187,6 +191,9 @@ export function GameProvider({ children }) {
             setVoteProgress({ count: 0, total: data.room.playerCount });
             setConfirmProgress({ count: 0, total: data.room.playerCount });
             setChatMessages([]); // Clear chat for new voting phase
+            // V1.3: Reset revote state for new voting phase
+            setVotingRound(1);
+            setAllowedVoteTargets(null);
         });
         
         // Vote submitted (progress update)
@@ -239,6 +246,9 @@ export function GameProvider({ children }) {
             setChatMessages([]);
             setResults(null);
             setTimer({ phase: null, remainingSeconds: 0 });
+            // V1.3: Reset revote state
+            setVotingRound(1);
+            setAllowedVoteTargets(null);
         });
         
         // Timer tick - server sends countdown every second
@@ -249,6 +259,18 @@ export function GameProvider({ children }) {
         // V1.2: Room settings updated by host
         socket.on('game:settingsUpdated', (data) => {
             setRoomSettings(data.settings);
+        });
+        
+        // V1.3: Revote started (tie occurred)
+        socket.on('game:revoteStarted', (data) => {
+            setVotingRound(data.votingRound);
+            setAllowedVoteTargets(data.allowedVoteTargets);
+            // Reset voting state for new round
+            setSelectedVote(null);
+            setHasConfirmedVote(false);
+            setHasVoted(false);
+            setChatMessages([]); // Clear chat for new voting round
+            // Note: Timer is restarted by server
         });
         
         // Cleanup
@@ -269,6 +291,7 @@ export function GameProvider({ children }) {
             socket.off('game:reset');
             socket.off('game:timer');
             socket.off('game:settingsUpdated');
+            socket.off('game:revoteStarted');
         };
     }, []);
 
@@ -379,6 +402,14 @@ export function GameProvider({ children }) {
                         // V1.1: Restore chat messages
                         if (state.chatMessages) {
                             setChatMessages(state.chatMessages);
+                        }
+                        
+                        // V1.3: Restore revote state
+                        if (state.votingRound !== undefined) {
+                            setVotingRound(state.votingRound);
+                        }
+                        if (state.allowedVoteTargets) {
+                            setAllowedVoteTargets(state.allowedVoteTargets);
                         }
                         
                         // Restore results
@@ -593,6 +624,10 @@ export function GameProvider({ children }) {
         selectedVote,
         hasConfirmedVote,
         confirmProgress,
+        
+        // V1.3: Revote state
+        votingRound,
+        allowedVoteTargets,
         
         // V1.1: Chat
         chatMessages,

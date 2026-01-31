@@ -138,6 +138,11 @@ const SETTINGS_LIMITS = {
 };
 
 /**
+ * V1.3: Maximum voting rounds before forced random elimination
+ */
+const MAX_VOTING_ROUNDS = 3;
+
+/**
  * Creates a new room with the specified host player.
  * @param {string} hostName - Name of the player creating the room
  * @param {string} socketId - Socket ID of the host
@@ -160,7 +165,9 @@ function createRoom(hostName, socketId) {
         players: new Map([[playerId, player]]),
         createdAt: new Date(),
         gameNumber: 0,              // V1.1: Track number of games played
-        settings: { ...DEFAULT_SETTINGS }  // V1.2: Host-configurable settings
+        settings: { ...DEFAULT_SETTINGS },  // V1.2: Host-configurable settings
+        votingRound: 1,             // V1.3: Current voting round (for revotes)
+        allowedVoteTargets: null    // V1.3: null = all players, array = only these playerIds
     };
     
     rooms.set(roomCode, room);
@@ -532,6 +539,15 @@ function getRejoinState(roomCode, playerId) {
         const descResult = getAttributedDescriptions(roomCode);
         if (descResult.success) {
             state.descriptions = descResult.descriptions;
+        }
+        
+        // V1.3: Include voting round and allowed targets for revotes
+        state.votingRound = room.votingRound || 1;
+        if (room.allowedVoteTargets) {
+            state.allowedVoteTargets = room.allowedVoteTargets.map(playerId => {
+                const player = room.players.get(playerId);
+                return { id: playerId, name: player ? player.name : 'Unknown' };
+            });
         }
         
         // V1.1: Two-step voting state
@@ -1160,6 +1176,7 @@ function transitionToVotingPhase(roomCode) {
 /**
  * V1.1: Selects a vote target (does not confirm yet).
  * Player can change their selection until they confirm.
+ * V1.3: Validates against allowedVoteTargets for revote rounds.
  * 
  * @param {string} roomCode - The room code
  * @param {string} voterId - The ID of the player voting
@@ -1189,6 +1206,11 @@ function selectVote(roomCode, voterId, targetPlayerId) {
         return { success: false, error: 'CANNOT_VOTE_SELF' };
     }
     
+    // V1.3: Enforce allowed vote targets during revotes
+    if (room.allowedVoteTargets && !room.allowedVoteTargets.includes(targetPlayerId)) {
+        return { success: false, error: 'INVALID_TARGET' };
+    }
+    
     // Cannot change selection after confirming
     if (room.confirmedVotes[voterId]) {
         return { success: false, error: 'ALREADY_CONFIRMED' };
@@ -1197,7 +1219,7 @@ function selectVote(roomCode, voterId, targetPlayerId) {
     // Set or update pending selection
     room.pendingVotes[voterId] = targetPlayerId;
     
-    console.log(`[Game] ${room.players.get(voterId).name} selected ${room.players.get(targetPlayerId).name}`);
+    console.log(`[Game] ${room.players.get(voterId).name} selected ${room.players.get(targetPlayerId).name} (round ${room.votingRound || 1})`);
     
     return { success: true };
 }
@@ -1205,6 +1227,7 @@ function selectVote(roomCode, voterId, targetPlayerId) {
 /**
  * V1.1: Confirms the current vote selection.
  * Once confirmed, the vote is locked and cannot be changed.
+ * V1.3: Validates target is in allowedVoteTargets for revote rounds.
  * 
  * @param {string} roomCode - The room code
  * @param {string} voterId - The ID of the player confirming their vote
@@ -1235,8 +1258,13 @@ function confirmVote(roomCode, voterId) {
         return { success: false, error: 'ALREADY_CONFIRMED' };
     }
     
-    // Lock in the vote
+    // V1.3: Validate target is in allowed list for revotes
     const targetPlayerId = room.pendingVotes[voterId];
+    if (room.allowedVoteTargets && !room.allowedVoteTargets.includes(targetPlayerId)) {
+        return { success: false, error: 'INVALID_TARGET' };
+    }
+    
+    // Lock in the vote
     room.confirmedVotes[voterId] = targetPlayerId;
     room.votes[voterId] = targetPlayerId; // For calculateVoteResults compatibility
     
@@ -1245,7 +1273,7 @@ function confirmVote(roomCode, voterId) {
     const allConfirmed = confirmedCount === totalPlayers;
     
     const voter = room.players.get(voterId);
-    console.log(`[Game] ${voter.name} confirmed vote (${confirmedCount}/${totalPlayers})`);
+    console.log(`[Game] ${voter.name} confirmed vote (${confirmedCount}/${totalPlayers}) - round ${room.votingRound || 1}`);
     
     return {
         success: true,
@@ -1363,23 +1391,21 @@ function submitVote(roomCode, voterId, targetPlayerId) {
 }
 
 /**
- * Calculates the vote results and determines the winner.
+ * Calculates vote results and determines the winner.
  * 
- * TIE-BREAKING RULES (Deterministic & Fair):
- * 1. If there's a clear winner (single highest vote count), they are voted out
- * 2. If there's a tie that INCLUDES the imposter → Imposter wins
- *    (Rationale: Imposter successfully created confusion)
- * 3. If there's a tie that does NOT include the imposter → Random selection among tied
- *    (Rationale: Fair resolution when players couldn't decide)
+ * V1.3: Now handles ties with revotes instead of automatic imposter wins.
  * 
- * ABSTAIN VOTE HANDLING:
- * - Players who did not vote are treated as abstaining
- * - Abstain votes do NOT count toward any player's vote total
- * - Abstaining players are NOT considered in tie-breaking
- * - Only actual votes cast are counted
+ * VOTE COUNTING BEHAVIOR:
+ * - Only confirmed votes are counted (room.votes)
+ * - Missing votes = abstain (ignored in counting)
+ * 
+ * TIE HANDLING (V1.3):
+ * - If multiple players have highest vote count: trigger revote
+ * - Revote only allows voting for tied players
+ * - Max 3 voting rounds; after that, random elimination among tied
  * 
  * @param {string} roomCode - The room code
- * @returns {Object} - { success, error?, results? }
+ * @returns {Object} - { success, error?, results?, isRevote?, tiedPlayers?, votingRound? }
  */
 function calculateVoteResults(roomCode) {
     const room = rooms.get(roomCode.toUpperCase());
@@ -1395,24 +1421,30 @@ function calculateVoteResults(roomCode) {
     // =========================================================================
     // STEP 1: Count votes for each player
     // NOTE: Only actual votes are counted. Abstains (missing votes) are ignored.
+    // V1.3: If allowedVoteTargets is set, only count votes for those players
     // =========================================================================
     const voteCounts = {}; // { [playerId]: number }
     
-    // Initialize all players with 0 votes
-    for (const playerId of room.players.keys()) {
+    // Determine which players to count votes for
+    const eligiblePlayers = room.allowedVoteTargets || Array.from(room.players.keys());
+    
+    // Initialize eligible players with 0 votes
+    for (const playerId of eligiblePlayers) {
         voteCounts[playerId] = 0;
     }
     
     // Count only actual votes cast (abstains are simply not in room.votes)
     const actualVotesCast = Object.keys(room.votes).length;
     for (const targetPlayerId of Object.values(room.votes)) {
-        voteCounts[targetPlayerId]++;
+        if (voteCounts[targetPlayerId] !== undefined) {
+            voteCounts[targetPlayerId]++;
+        }
     }
     
     // Log abstain count for debugging
     const abstainCount = room.players.size - actualVotesCast;
     if (abstainCount > 0) {
-        console.log(`[Game] ${abstainCount} player(s) abstained from voting in room ${roomCode}`);
+        console.log(`[Game] ${abstainCount} player(s) abstained from voting in room ${roomCode} (round ${room.votingRound || 1})`);
     }
     
     // =========================================================================
@@ -1434,64 +1466,106 @@ function calculateVoteResults(roomCode) {
     }
     
     // =========================================================================
-    // STEP 3: Determine voted out player (handle ties)
+    // STEP 3: Handle ties with revote (V1.3)
     // =========================================================================
-    let votedOutPlayerId;
+    const currentRound = room.votingRound || 1;
     
-    if (playersWithMaxVotes.length === 1) {
-        // Clear winner - no tie
-        votedOutPlayerId = playersWithMaxVotes[0];
-        console.log(`[Game] Clear winner: ${room.players.get(votedOutPlayerId).name} with ${maxVotes} votes`);
-    } else {
-        // TIE SCENARIO
-        const imposterInTie = playersWithMaxVotes.includes(room.imposterId);
+    if (playersWithMaxVotes.length > 1) {
+        // TIE DETECTED
+        console.log(`[Game] Tie detected in room ${roomCode} round ${currentRound}: ${playersWithMaxVotes.length} players with ${maxVotes} votes`);
         
-        if (imposterInTie) {
-            // TIE INCLUDES IMPOSTER → Imposter wins (escapes detection)
-            // We vote out a random non-imposter from the tied players
-            // This means imposter successfully created confusion
-            const nonImposterTied = playersWithMaxVotes.filter(id => id !== room.imposterId);
-            if (nonImposterTied.length > 0) {
-                // Vote out a random non-imposter from the tie
-                votedOutPlayerId = nonImposterTied[Math.floor(Math.random() * nonImposterTied.length)];
-            } else {
-                // Edge case: only imposter is tied (shouldn't happen with >1 players)
-                votedOutPlayerId = room.imposterId;
-            }
-            console.log(`[Game] Tie includes imposter - voting out ${room.players.get(votedOutPlayerId).name}`);
-        } else {
-            // TIE DOES NOT INCLUDE IMPOSTER → Random selection among tied
-            votedOutPlayerId = playersWithMaxVotes[Math.floor(Math.random() * playersWithMaxVotes.length)];
-            console.log(`[Game] Tie without imposter - randomly selected ${room.players.get(votedOutPlayerId).name}`);
+        // Check if max rounds exceeded
+        if (currentRound >= MAX_VOTING_ROUNDS) {
+            // Force random elimination among tied players
+            console.log(`[Game] Max voting rounds (${MAX_VOTING_ROUNDS}) reached - randomly eliminating one tied player`);
+            const randomTiedPlayer = playersWithMaxVotes[Math.floor(Math.random() * playersWithMaxVotes.length)];
+            
+            // Continue to results with the randomly selected player
+            return finalizeResults(room, randomTiedPlayer, voteCounts);
         }
+        
+        // Initiate revote
+        room.votingRound = currentRound + 1;
+        room.allowedVoteTargets = [...playersWithMaxVotes]; // Only tied players can be voted
+        
+        // Clear voting state for new round
+        room.pendingVotes = {};
+        room.confirmedVotes = {};
+        room.votes = {};
+        
+        // Clear chat for new round
+        room.chat = {
+            messages: [],
+            rateLimit: new Map()
+        };
+        
+        // Build tied players info
+        const tiedPlayers = playersWithMaxVotes.map(playerId => {
+            const player = room.players.get(playerId);
+            return { id: playerId, name: player.name };
+        });
+        
+        console.log(`[Game] Starting revote round ${room.votingRound} in room ${roomCode}. Tied players: ${tiedPlayers.map(p => p.name).join(', ')}`);
+        
+        return {
+            success: false,
+            isRevote: true,
+            votingRound: room.votingRound,
+            tiedPlayers: tiedPlayers,
+            allowedVoteTargets: tiedPlayers
+        };
     }
     
     // =========================================================================
-    // STEP 4: Determine winner
+    // STEP 4: Clear winner - proceed to results
+    // =========================================================================
+    const votedOutPlayerId = playersWithMaxVotes[0];
+    console.log(`[Game] Clear winner: ${room.players.get(votedOutPlayerId).name} with ${maxVotes} votes`);
+    
+    return finalizeResults(room, votedOutPlayerId, voteCounts);
+}
+
+/**
+ * V1.3: Helper function to finalize and return vote results.
+ * Transitions room to results phase and builds the result payload.
+ * 
+ * @param {Object} room - The room object
+ * @param {string} votedOutPlayerId - The player who was voted out
+ * @param {Object} voteCounts - Vote counts per player
+ * @returns {Object} - Result payload
+ */
+function finalizeResults(room, votedOutPlayerId, voteCounts) {
+    // =========================================================================
+    // Determine winner
     // =========================================================================
     const playersWin = votedOutPlayerId === room.imposterId;
     
     // =========================================================================
-    // STEP 5: Build vote summary (revealed only in results)
+    // Build vote summary (revealed only in results)
     // =========================================================================
     const voteSummary = [];
     for (const [playerId, count] of Object.entries(voteCounts)) {
         const player = room.players.get(playerId);
-        voteSummary.push({
-            playerId: playerId,
-            playerName: player.name,
-            votes: count
-        });
+        if (player) {
+            voteSummary.push({
+                playerId: playerId,
+                playerName: player.name,
+                votes: count
+            });
+        }
     }
     
     // Sort by votes (descending) for display
     voteSummary.sort((a, b) => b.votes - a.votes);
     
     // =========================================================================
-    // STEP 6: Transition to results phase (then to postGame)
+    // Transition to results phase
     // V1.1: Room stays open after results for replay
+    // V1.3: Reset voting round state for next game
     // =========================================================================
     room.phase = 'results';
+    room.votingRound = 1;
+    room.allowedVoteTargets = null;
     
     const votedOutPlayer = room.players.get(votedOutPlayerId);
     const imposter = room.players.get(room.imposterId);
@@ -1634,6 +1708,10 @@ function resetRoomForNewGame(roomCode, requestingPlayerId) {
     delete room.confirmedVotes;
     delete room.chat;
     delete room.postGameTimeoutId;
+    
+    // V1.3: Reset voting round state
+    room.votingRound = 1;
+    room.allowedVoteTargets = null;
     
     // Reset to lobby and increment game number
     room.phase = 'lobby';
@@ -1797,8 +1875,17 @@ function serializeRoom(room) {
         })),
         playerCount: room.players.size,
         gameNumber: room.gameNumber || 0,   // V1.1: Include game count
-        settings: room.settings || { descriptionTime: 10, votingTime: 60 }  // V1.2: Include settings
+        settings: room.settings || { descriptionTime: 10, votingTime: 60 },  // V1.2: Include settings
+        votingRound: room.votingRound || 1  // V1.3: Include voting round
     };
+    
+    // V1.3: Include allowed vote targets during revotes
+    if (room.allowedVoteTargets && room.phase === 'voting') {
+        serialized.allowedVoteTargets = room.allowedVoteTargets.map(playerId => {
+            const player = room.players.get(playerId);
+            return { id: playerId, name: player ? player.name : 'Unknown' };
+        });
+    }
     
     // Include topic if game has started (topic is public knowledge)
     if (room.topic) {
@@ -1847,5 +1934,6 @@ module.exports = {
     updateRoomSettings,      // V1.2
     DEFAULT_SETTINGS,        // V1.2
     SETTINGS_LIMITS,         // V1.2
+    MAX_VOTING_ROUNDS,       // V1.3
     MIN_PLAYERS
 };
