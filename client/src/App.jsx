@@ -1,11 +1,16 @@
 /**
- * Main App Component
+ * Main App Component (V1.2)
  * 
  * Renders the appropriate page based on the current game phase.
  * Phase changes are driven entirely by server events.
+ * 
+ * V1.2: Added GameLayout wrapper for responsive desktop layout.
+ * - Game phases (roleReveal, description, voting, results, postGame) use GameLayout
+ * - Home and Lobby pages use the standard container layout
  */
 
 import { useGame } from './GameContext';
+import GameLayout from './components/GameLayout';
 import Home from './pages/Home';
 import Lobby from './pages/Lobby';
 import RoleReveal from './pages/RoleReveal';
@@ -44,10 +49,19 @@ export default function App() {
         }
     };
 
+    // Check if current phase should use the game layout
+    const isGamePhase = room && ['roleReveal', 'description', 'voting', 'results', 'postGame'].includes(phase);
+
     return (
         <div className="app">
             <div className="container">
-                {renderPage()}
+                {isGamePhase ? (
+                    <GameLayout>
+                        {renderPage()}
+                    </GameLayout>
+                ) : (
+                    renderPage()
+                )}
             </div>
         </div>
     );

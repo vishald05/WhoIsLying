@@ -910,3 +910,462 @@ button:disabled {
     letter-spacing: 2px;
 }
 
+/* =============================================================================
+   V1.2: DESKTOP RESPONSIVE LAYOUT
+   
+   Strategy: Use CSS Grid to reposition existing elements on desktop (≥1024px)
+   while keeping the mobile vertical stacked layout completely unchanged.
+   
+   No conditional rendering—purely CSS-based responsive design.
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   DESKTOP CONTAINER ADJUSTMENTS
+   ----------------------------------------------------------------------------- */
+
+/* On desktop, expand the container to use more horizontal space */
+@media (min-width: 1024px) {
+    .app {
+        align-items: flex-start;
+        padding: 30px;
+    }
+    
+    .container {
+        max-width: 1400px;
+    }
+}
+
+/* -----------------------------------------------------------------------------
+   GAME LAYOUT - Desktop Grid Structure
+   
+   Grid Areas:
+   - left: Players list panel (fixed width)
+   - center: Main game content (flexible)
+   - right: Phase info, actions (fixed width)
+   - bottom: Chat panel (full width)
+   ----------------------------------------------------------------------------- */
+
+.game-layout {
+    width: 100%;
+}
+
+/* Desktop: Apply CSS Grid layout */
+@media (min-width: 1024px) {
+    .game-layout {
+        display: grid;
+        grid-template-columns: 280px 1fr 300px;
+        grid-template-rows: 1fr auto;
+        grid-template-areas:
+            "left center right"
+            "bottom bottom bottom";
+        gap: 20px;
+        min-height: calc(100vh - 60px);
+    }
+}
+
+/* -----------------------------------------------------------------------------
+   PANEL STYLES
+   
+   Each panel has base styles (mobile) and desktop overrides.
+   On mobile, panels stack vertically in their DOM order.
+   ----------------------------------------------------------------------------- */
+
+/* Left Panel - Players List */
+.game-panel-left {
+    /* Mobile: normal flow, no special styling */
+}
+
+@media (min-width: 1024px) {
+    .game-panel-left {
+        grid-area: left;
+        background: #16213e;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        max-height: calc(100vh - 180px);
+        overflow-y: auto;
+        position: sticky;
+        top: 30px;
+    }
+    
+    .game-panel-left h3 {
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #0f3460;
+    }
+}
+
+/* Center Panel - Main Game Content */
+.game-panel-center {
+    /* Mobile: normal flow */
+}
+
+@media (min-width: 1024px) {
+    .game-panel-center {
+        grid-area: center;
+        background: #16213e;
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* Center panel should not have max-height to allow content to grow */
+    .game-panel-center .page {
+        background: transparent;
+        box-shadow: none;
+        padding: 0;
+    }
+}
+
+/* Right Panel - Phase Info & Actions */
+.game-panel-right {
+    /* Mobile: normal flow */
+}
+
+@media (min-width: 1024px) {
+    .game-panel-right {
+        grid-area: right;
+        background: #16213e;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        max-height: calc(100vh - 180px);
+        overflow-y: auto;
+        position: sticky;
+        top: 30px;
+    }
+    
+    .game-panel-right h3 {
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #0f3460;
+    }
+}
+
+/* Bottom Panel - Chat Section */
+.game-panel-bottom {
+    /* Mobile: hidden by default, shown only via chat toggle if needed */
+}
+
+@media (min-width: 1024px) {
+    .game-panel-bottom {
+        grid-area: bottom;
+        background: #16213e;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        max-height: 250px;
+    }
+    
+    .game-panel-bottom .chat-messages {
+        height: 120px;
+    }
+}
+
+/* -----------------------------------------------------------------------------
+   DESKTOP-SPECIFIC COMPONENT ADJUSTMENTS
+   
+   Fine-tune existing components when displayed in the desktop layout.
+   ----------------------------------------------------------------------------- */
+
+@media (min-width: 1024px) {
+    /* Timer - more prominent on desktop */
+    .game-layout .timer {
+        font-size: 1.8rem;
+        padding: 15px 30px;
+    }
+    
+    /* Topic display - larger on desktop */
+    .game-layout .topic-display {
+        padding: 20px;
+        margin-bottom: 25px;
+    }
+    
+    .game-layout .topic-display strong {
+        font-size: 1.8rem;
+    }
+    
+    /* Speaking order - horizontal layout on desktop */
+    .game-layout .speaking-order {
+        padding: 20px;
+    }
+    
+    .game-layout .order-list {
+        gap: 10px;
+    }
+    
+    /* Description form - wider textarea on desktop */
+    .game-layout .description-form textarea {
+        min-height: 100px;
+    }
+    
+    /* Vote buttons - can be in a grid on desktop */
+    .game-layout .vote-buttons {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 10px;
+    }
+    
+    .game-layout .vote-buttons button {
+        text-align: center;
+    }
+    
+    /* Confirm section - more padding on desktop */
+    .game-layout .confirm-section {
+        margin-top: 25px;
+        padding: 25px;
+    }
+    
+    /* Descriptions list - better readability on desktop */
+    .game-layout .descriptions-list li {
+        padding: 15px 20px;
+        font-size: 1rem;
+    }
+    
+    /* Results banner - larger on desktop */
+    .game-layout .result-banner {
+        padding: 30px;
+        margin-bottom: 25px;
+    }
+    
+    .game-layout .result-banner h3 {
+        font-size: 1.8rem;
+    }
+    
+    /* Result details - grid layout on desktop */
+    .game-layout .result-details {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+    }
+    
+    .game-layout .detail-item {
+        margin-bottom: 0;
+    }
+}
+
+/* -----------------------------------------------------------------------------
+   DESKTOP PANEL VISIBILITY HELPERS
+   
+   Classes to show/hide content based on viewport.
+   Use these for elements that should only appear in certain panels on desktop.
+   ----------------------------------------------------------------------------- */
+
+/* Hide on mobile, show on desktop */
+.desktop-only {
+    display: none;
+}
+
+@media (min-width: 1024px) {
+    .desktop-only {
+        display: block;
+    }
+}
+
+/* Show on mobile, hide on desktop */
+@media (min-width: 1024px) {
+    .mobile-only {
+        display: none;
+    }
+}
+
+/* -----------------------------------------------------------------------------
+   SCROLLBAR STYLING FOR DESKTOP PANELS
+   ----------------------------------------------------------------------------- */
+
+@media (min-width: 1024px) {
+    .game-panel-left::-webkit-scrollbar,
+    .game-panel-right::-webkit-scrollbar,
+    .game-panel-bottom .chat-messages::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    .game-panel-left::-webkit-scrollbar-track,
+    .game-panel-right::-webkit-scrollbar-track,
+    .game-panel-bottom .chat-messages::-webkit-scrollbar-track {
+        background: #0f3460;
+        border-radius: 3px;
+    }
+    
+    .game-panel-left::-webkit-scrollbar-thumb,
+    .game-panel-right::-webkit-scrollbar-thumb,
+    .game-panel-bottom .chat-messages::-webkit-scrollbar-thumb {
+        background: #e94560;
+        border-radius: 3px;
+    }
+    
+    .game-panel-left::-webkit-scrollbar-thumb:hover,
+    .game-panel-right::-webkit-scrollbar-thumb:hover,
+    .game-panel-bottom .chat-messages::-webkit-scrollbar-thumb:hover {
+        background: #ff6b8a;
+    }
+}
+
+/* -----------------------------------------------------------------------------
+   V1.2: ADDITIONAL UI COMPONENTS FOR DESKTOP LAYOUT
+   ----------------------------------------------------------------------------- */
+
+/* Info box - used in right panel for instructions */
+.info-box {
+    background: #0f3460;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.info-box p {
+    color: #aaa;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.info-box p:last-child {
+    margin-bottom: 0;
+}
+
+.info-box strong {
+    color: #e94560;
+}
+
+/* Phase info section */
+.phase-info {
+    margin-top: 20px;
+}
+
+.phase-info h3 {
+    font-size: 1rem;
+    color: #888;
+    margin-bottom: 10px;
+}
+
+/* Progress section in right panel */
+.progress-section {
+    margin-top: 20px;
+}
+
+.progress-section h3 {
+    font-size: 1rem;
+    color: #888;
+    margin-bottom: 10px;
+}
+
+/* Stats section in PostGame */
+.stats-section {
+    margin-top: 20px;
+}
+
+.stats-section h3 {
+    font-size: 1rem;
+    color: #888;
+    margin-bottom: 10px;
+}
+
+/* Room code highlight for invite section */
+.room-code-highlight {
+    font-size: 1.5rem;
+    letter-spacing: 3px;
+    text-align: center;
+    margin-top: 10px;
+}
+
+.room-code-highlight strong {
+    color: #e94560;
+}
+
+/* Left panel should be hidden on mobile (content is duplicated in center panel) */
+.game-panel-left {
+    display: none;
+}
+
+@media (min-width: 1024px) {
+    .game-panel-left {
+        display: block;
+    }
+}
+
+/* Host controls in right panel */
+@media (min-width: 1024px) {
+    .game-panel-right .host-controls {
+        margin-top: 15px;
+    }
+    
+    .game-panel-right .host-controls button {
+        width: 100%;
+    }
+    
+    .game-panel-right .waiting-message {
+        text-align: center;
+        color: #888;
+        font-style: italic;
+        margin-top: 15px;
+    }
+}
+
+/* Ensure vote buttons in left panel stack vertically */
+@media (min-width: 1024px) {
+    .game-panel-left .vote-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .game-panel-left .vote-buttons button {
+        text-align: left;
+    }
+    
+    .game-panel-left .confirm-section {
+        margin-top: 15px;
+        padding: 15px;
+    }
+    
+    .game-panel-left .voted-message {
+        margin-top: 15px;
+        padding: 15px;
+        background: #0f3460;
+        border-radius: 8px;
+        text-align: center;
+    }
+}
+
+/* Speaking order adjustments for left panel on desktop */
+@media (min-width: 1024px) {
+    .game-panel-left .speaking-order {
+        background: transparent;
+        padding: 0;
+    }
+    
+    .game-panel-left .speaking-order h3 {
+        margin-bottom: 15px;
+    }
+    
+    .game-panel-left .order-list {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .game-panel-left .speaker-item {
+        justify-content: flex-start;
+        padding: 10px 15px;
+        border-radius: 8px;
+    }
+}
+
+/* Player list adjustments for left panel on desktop */
+@media (min-width: 1024px) {
+    .game-panel-left .player-list {
+        margin-bottom: 0;
+    }
+    
+    .game-panel-left .player-list h3 {
+        margin-bottom: 15px;
+    }
+}
+
+/* Topic display adjustments for left panel on desktop */
+@media (min-width: 1024px) {
+    .game-panel-left .topic-display {
+        margin-bottom: 20px;
+    }
+}
+
