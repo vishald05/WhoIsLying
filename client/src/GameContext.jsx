@@ -48,9 +48,8 @@ export function GameProvider({ children }) {
     // V1.1: Chat state
     const [chatMessages, setChatMessages] = useState([]);
     
-    // V1.3: Revote state
-    const [votingRound, setVotingRound] = useState(1);
-    const [allowedVoteTargets, setAllowedVoteTargets] = useState(null); // null = all players, array = restricted
+    // V1.3: Tie transition state (shows transition screen for 2-3 seconds)
+    const [showTieTransition, setShowTieTransition] = useState(false);
     
     // Results state
     const [results, setResults] = useState(null);
@@ -191,9 +190,6 @@ export function GameProvider({ children }) {
             setVoteProgress({ count: 0, total: data.room.playerCount });
             setConfirmProgress({ count: 0, total: data.room.playerCount });
             setChatMessages([]); // Clear chat for new voting phase
-            // V1.3: Reset revote state for new voting phase
-            setVotingRound(1);
-            setAllowedVoteTargets(null);
         });
         
         // Vote submitted (progress update)
@@ -246,9 +242,6 @@ export function GameProvider({ children }) {
             setChatMessages([]);
             setResults(null);
             setTimer({ phase: null, remainingSeconds: 0 });
-            // V1.3: Reset revote state
-            setVotingRound(1);
-            setAllowedVoteTargets(null);
         });
         
         // Timer tick - server sends countdown every second
@@ -261,16 +254,38 @@ export function GameProvider({ children }) {
             setRoomSettings(data.settings);
         });
         
-        // V1.3: Revote started (tie occurred)
-        socket.on('game:revoteStarted', (data) => {
-            setVotingRound(data.votingRound);
-            setAllowedVoteTargets(data.allowedVoteTargets);
-            // Reset voting state for new round
+        // V1.3: Tie replay started (tie occurred - new round with same imposter)
+        socket.on('game:tieReplayStarted', (data) => {
+            console.log('[Game] Tie detected - starting replay round with new topic');
+            
+            // Show transition screen
+            setShowTieTransition(true);
+            
+            // Update topic and speaking order
+            setTopic(data.topic);
+            setSpeakingOrder(data.speakingOrder || []);
+            
+            // Reset all round-specific state
+            setDescriptions([]);
+            setLiveDescriptions([]);
+            setHasSubmittedDescription(false);
+            setSubmissionProgress({ count: 0, total: 0 });
             setSelectedVote(null);
             setHasConfirmedVote(false);
             setHasVoted(false);
-            setChatMessages([]); // Clear chat for new voting round
-            // Note: Timer is restarted by server
+            setVoteProgress({ count: 0, total: 0 });
+            setConfirmProgress({ count: 0, total: 0 });
+            setChatMessages([]);
+            setCurrentSpeaker(null);
+            setResults(null);
+            
+            // Clear timer (server will restart it)
+            setTimer({ phase: null, remainingSeconds: 0 });
+            
+            // Hide transition after 2.5 seconds
+            setTimeout(() => {
+                setShowTieTransition(false);
+            }, 2500);
         });
         
         // Cleanup
@@ -291,7 +306,7 @@ export function GameProvider({ children }) {
             socket.off('game:reset');
             socket.off('game:timer');
             socket.off('game:settingsUpdated');
-            socket.off('game:revoteStarted');
+            socket.off('game:tieReplayStarted');
         };
     }, []);
 
@@ -402,14 +417,6 @@ export function GameProvider({ children }) {
                         // V1.1: Restore chat messages
                         if (state.chatMessages) {
                             setChatMessages(state.chatMessages);
-                        }
-                        
-                        // V1.3: Restore revote state
-                        if (state.votingRound !== undefined) {
-                            setVotingRound(state.votingRound);
-                        }
-                        if (state.allowedVoteTargets) {
-                            setAllowedVoteTargets(state.allowedVoteTargets);
                         }
                         
                         // Restore results
@@ -625,9 +632,8 @@ export function GameProvider({ children }) {
         hasConfirmedVote,
         confirmProgress,
         
-        // V1.3: Revote state
-        votingRound,
-        allowedVoteTargets,
+        // V1.3: Tie transition state
+        showTieTransition,
         
         // V1.1: Chat
         chatMessages,

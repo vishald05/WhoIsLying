@@ -1541,37 +1541,108 @@ button:disabled {
     font-weight: bold;
 }
 
-/* V1.3: Revote-specific styles */
-.vote-button-with-avatar.not-in-revote {
-    opacity: 0.4;
-    cursor: not-allowed;
-    background: #1a1a2e;
-    border-color: #333;
+/* =========================================================================
+   V1.3: TIE TRANSITION OVERLAY
+   Full-screen overlay shown when voting ends in a tie
+   ========================================================================= */
+
+.tie-transition-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(10, 10, 20, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: fadeInOverlay 0.3s ease-out;
 }
 
-.vote-button-with-avatar.not-in-revote:hover {
-    background: #1a1a2e;
-    border-color: #333;
-    transform: none;
+@keyframes fadeInOverlay {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
-.revote-notice {
-    background: linear-gradient(135deg, #2d3a4d 0%, #1e2d3d 100%);
-    border: 1px solid #4a90a4;
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-    color: #a0d2db;
-    font-size: 0.95rem;
+.tie-transition-content {
     text-align: center;
+    animation: scaleIn 0.4s ease-out;
 }
 
-.voting-round-indicator {
+@keyframes scaleIn {
+    from {
+        transform: scale(0.8);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.tie-icon {
+    font-size: 5rem;
+    margin-bottom: 1rem;
+    animation: bounce 0.6s ease-out;
+}
+
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-20px);
+    }
+}
+
+.tie-transition-content h1 {
+    font-size: 3rem;
+    color: #fff;
+    margin: 0 0 0.5rem 0;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+.tie-subtitle {
+    font-size: 1.3rem;
     color: #a0d2db;
-    font-size: 0.9rem;
-    margin-bottom: 8px;
-    text-align: center;
-    font-weight: 500;
+    margin: 0 0 2rem 0;
+}
+
+.tie-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #4ade80;
+    border-radius: 50%;
+    margin: 0 auto;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Mobile adjustments */
+@media (max-width: 600px) {
+    .tie-icon {
+        font-size: 4rem;
+    }
+    
+    .tie-transition-content h1 {
+        font-size: 2rem;
+    }
+    
+    .tie-subtitle {
+        font-size: 1rem;
+        padding: 0 1rem;
+    }
 }
 
 /* Results player card with avatar */

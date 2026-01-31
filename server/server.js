@@ -936,6 +936,10 @@ function handleVotingTimeout(roomCode) {
  * - voteSummary shows each player's vote count
  * - imposter identity is revealed
  * - playersWin indicates if players successfully caught the imposter
+ * 
+ * V1.3 TIE HANDLING:
+ * - On tie, restarts round with same imposter, new topic/word
+ * - Emits game:tieReplayStarted instead of results
  */
 function handleVotingComplete(roomCode) {
     // Clear voting timer
@@ -944,24 +948,62 @@ function handleVotingComplete(roomCode) {
     const result = roomManager.calculateVoteResults(roomCode);
     
     // =========================================================================
-    // V1.3: Handle revote on tie
+    // V1.3: Handle tie by restarting game round with same imposter
     // =========================================================================
-    if (result.isRevote) {
-        console.log(`[Game] Tie detected in room ${roomCode} - starting revote round ${result.votingRound}`);
+    if (result.isTie) {
+        console.log(`[Game] Tie detected in room ${roomCode} - starting tie-breaker replay round`);
         
-        // Emit revote event to all players
-        io.to(roomCode).emit('game:revoteStarted', {
-            votingRound: result.votingRound,
-            allowedVoteTargets: result.allowedVoteTargets,
-            tiedPlayers: result.tiedPlayers
+        // Restart the game round with same imposter, new topic/word
+        const restartResult = roomManager.restartGameRoundWithSameImposter(roomCode);
+        
+        if (!restartResult.success) {
+            console.error(`[Game] Failed to restart round after tie: ${restartResult.error}`);
+            return;
+        }
+        
+        const room = restartResult.room;
+        const gameData = restartResult.gameData;
+        
+        // Emit tie replay started to all players
+        io.to(roomCode).emit('game:tieReplayStarted', {
+            topic: gameData.topic,
+            speakingOrder: restartResult.speakingOrder
         });
         
-        // Restart voting timer with room settings
-        const room = roomManager.getRoom(roomCode);
-        const votingDuration = room?.settings?.votingTime || 60;
-        startPhaseTimer(roomCode, 'voting', votingDuration);
+        // Send role assignments to each player (new word for non-imposters)
+        for (const [playerId, player] of room.players) {
+            const isImposter = playerId === gameData.imposterId;
+            
+            io.to(player.socketId).emit('game:roleAssigned', {
+                isImposter: isImposter,
+                topic: gameData.topic,
+                word: isImposter ? null : gameData.word
+            });
+        }
         
-        console.log(`[Game] Revote timer started for room ${roomCode} - ${votingDuration}s`);
+        // Emit phase change to description
+        io.to(roomCode).emit('game:phaseChanged', {
+            phase: 'description',
+            room: roomManager.serializeRoom(room),
+            speakingOrder: restartResult.speakingOrder,
+            currentSpeakerIndex: 0
+        });
+        
+        // Emit first speaker turn
+        const firstSpeakerId = room.speakingOrder[0];
+        const firstSpeaker = room.players.get(firstSpeakerId);
+        io.to(roomCode).emit('game:speakerTurn', {
+            speakerId: firstSpeakerId,
+            speakerName: firstSpeaker.name,
+            speakerIndex: 0,
+            totalSpeakers: room.speakingOrder.length
+        });
+        
+        // Start description timer for first speaker
+        const descriptionDuration = room.settings?.descriptionTime || 10;
+        startPhaseTimer(roomCode, 'description', descriptionDuration);
+        
+        console.log(`[Game] Tie-breaker replay started in room ${roomCode}. First speaker: ${firstSpeaker.name}`);
         return;
     }
     

@@ -11,6 +11,7 @@
 
 import { useGame } from './GameContext';
 import GameLayout from './components/GameLayout';
+import TieTransition from './components/TieTransition';
 import Home from './pages/Home';
 import Lobby from './pages/Lobby';
 import RoleReveal from './pages/RoleReveal';
@@ -54,6 +55,9 @@ export default function App() {
 
     return (
         <div className="app">
+            {/* V1.3: Tie transition overlay - shows on top of everything */}
+            <TieTransition />
+            
             <div className="container">
                 {isGamePhase ? (
                     <GameLayout>
