@@ -2047,3 +2047,185 @@ button:disabled {
 .game-panel-right .apply-settings-btn {
     padding: 6px 12px;
     font-size: 0.85rem;
+}
+
+/* =================================================================
+   END GAME BUTTON STYLES
+   ================================================================= */
+
+/* End Game Button */
+.end-game-button {
+    position: fixed;
+    top: 15px;
+    right: 15px;
+    z-index: 100;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+}
+
+.end-game-button:hover {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+}
+
+.end-game-button:active {
+    transform: translateY(0);
+}
+
+/* End Game Modal Overlay */
+.end-game-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease;
+}
+
+/* End Game Modal */
+.end-game-modal {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border: 2px solid #dc2626;
+    border-radius: 16px;
+    padding: 30px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.end-game-modal h3 {
+    font-size: 1.5rem;
+    margin-bottom: 15px;
+    color: #fff;
+}
+
+.end-game-modal p {
+    color: #aaa;
+    margin-bottom: 25px;
+    line-height: 1.5;
+}
+
+.end-game-modal-buttons {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+.confirm-end-btn {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.confirm-end-btn:hover {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    transform: translateY(-1px);
+}
+
+.cancel-btn {
+    padding: 12px 24px;
+    background: transparent;
+    color: #aaa;
+    border: 2px solid #444;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+    border-color: #666;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Host Ended Game - PostGame Styles */
+.last-game-summary.host-ended {
+    border-color: #dc2626;
+    background: linear-gradient(135deg, rgba(220, 38, 38, 0.1) 0%, rgba(139, 21, 56, 0.1) 100%);
+}
+
+.result-mini.host-ended-badge {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white;
+}
+
+.imposter-reveal-mini {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin: 15px 0;
+}
+
+.imposter-reveal-mini strong {
+    font-size: 1.3rem;
+    color: #e94560;
+}
+
+/* Desktop adjustments for end game button */
+@media (min-width: 1024px) {
+    .end-game-button {
+        top: 20px;
+        right: 20px;
+        padding: 10px 20px;
+    }
+}
+
+/* Mobile adjustments */
+@media (max-width: 600px) {
+    .end-game-button {
+        top: 10px;
+        right: 10px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+    
+    .end-game-modal {
+        padding: 20px;
+        margin: 15px;
+    }
+    
+    .end-game-modal h3 {
+        font-size: 1.3rem;
+    }
+    
+    .end-game-modal-buttons {
+        flex-direction: column;
+    }
+}

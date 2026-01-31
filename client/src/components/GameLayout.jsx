@@ -30,6 +30,7 @@
  */
 
 import { useGame } from '../GameContext';
+import EndGameButton from './EndGameButton';
 
 export default function GameLayout({ children }) {
     const { room, phase } = useGame();
@@ -45,6 +46,8 @@ export default function GameLayout({ children }) {
     
     return (
         <div className="game-layout">
+            {/* V1.3: End Game button - visible to host during active phases */}
+            <EndGameButton />
             {children}
         </div>
     );

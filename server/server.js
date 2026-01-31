@@ -409,6 +409,71 @@ io.on('connection', (socket) => {
     });
 
     // -------------------------------------------------------------------------
+    // END GAME (HOST ONLY)
+    // Client sends: {} (no data needed)
+    // Server responds: { success, error? }
+    // 
+    // Allows host to end the current game at any time.
+    // Transitions to postGame and reveals the imposter.
+    // Only works during active game phases (roleReveal, description, voting).
+    // -------------------------------------------------------------------------
+    socket.on('game:endGame', (callback) => {
+        const playerData = roomManager.getPlayerBySocketId(socket.id);
+        
+        if (!playerData) {
+            return callback({ success: false, error: 'NOT_IN_ROOM' });
+        }
+        
+        const { room, player } = playerData;
+        
+        // Only host can end game
+        if (room.hostId !== player.id) {
+            return callback({ success: false, error: 'NOT_HOST' });
+        }
+        
+        // Only allow ending during active game phases
+        const activePhases = ['roleReveal', 'description', 'voting'];
+        if (!activePhases.includes(room.phase)) {
+            return callback({ success: false, error: 'INVALID_PHASE' });
+        }
+        
+        // Clear all active timers
+        timerManager.clearTimer(room.code);
+        
+        // Clear any pending postGame timeout
+        roomManager.clearPostGameTimeout(room.code);
+        
+        // Get imposter info before transitioning
+        const imposter = room.players.get(room.imposterId);
+        if (!imposter) {
+            return callback({ success: false, error: 'NO_IMPOSTER' });
+        }
+        
+        // Transition to postGame
+        room.phase = 'postGame';
+        
+        // Emit game ended by host event
+        io.to(room.code).emit('game:endedByHost', {
+            imposter: {
+                id: imposter.id,
+                name: imposter.name
+            },
+            secretWord: room.word,
+            reason: 'hostEnded'
+        });
+        
+        // Emit phase change
+        io.to(room.code).emit('game:phaseChanged', {
+            phase: 'postGame',
+            room: roomManager.serializeRoom(room)
+        });
+        
+        callback({ success: true });
+        
+        console.log(`[Game] Room ${room.code} game ended by host ${player.name}`);
+    });
+
+    // -------------------------------------------------------------------------
     // TRANSITION TO DESCRIPTION PHASE
     // Client sends: (no data needed, typically called after role reveal timeout)
     // Server responds: { success, error?, room? }

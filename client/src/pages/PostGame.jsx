@@ -29,6 +29,7 @@ export default function PostGame() {
         isHost,
         results,
         roomSettings,
+        hostEndedGame,
         playAgain,
         updateSettings,
         error,
@@ -123,14 +124,35 @@ export default function PostGame() {
                 ================================================================= */}
             <div className="game-panel-center">
                 <div className="page post-game">
-                    <h2>🎮 Game Complete!</h2>
+                    <h2>{hostEndedGame ? '🛑 Game Ended by Host' : '🎮 Game Complete!'}</h2>
                     
                     {error && (
                         <div className="error">{error}</div>
                     )}
                     
-                    {/* Last game summary */}
-                    {results && (
+                    {/* Host ended game - special display */}
+                    {hostEndedGame && results && (
+                        <div className="last-game-summary host-ended">
+                            <div className="result-mini host-ended-badge">
+                                Game was ended early
+                            </div>
+                            <div className="summary-details">
+                                <p>The Imposter was:</p>
+                                <div className="imposter-reveal-mini">
+                                    <Avatar 
+                                        seed={results.imposter?.id || results.imposter?.name}
+                                        size={60}
+                                        className="avatar-lg"
+                                    />
+                                    <strong>{results.imposter?.name}</strong>
+                                </div>
+                                <p>Secret Word: <strong>{results.secretWord}</strong></p>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Normal game complete - last game summary */}
+                    {!hostEndedGame && results && (
                         <div className="last-game-summary">
                             <h3>Last Game Results</h3>
                             <div className={`result-mini ${results.playersWin ? 'players-win' : 'imposter-wins'}`}>

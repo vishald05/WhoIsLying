@@ -51,6 +51,9 @@ export function GameProvider({ children }) {
     // V1.3: Tie transition state (shows transition screen for 2-3 seconds)
     const [showTieTransition, setShowTieTransition] = useState(false);
     
+    // V1.3: Host ended game state
+    const [hostEndedGame, setHostEndedGame] = useState(false);
+    
     // Results state
     const [results, setResults] = useState(null);
     
@@ -242,6 +245,8 @@ export function GameProvider({ children }) {
             setChatMessages([]);
             setResults(null);
             setTimer({ phase: null, remainingSeconds: 0 });
+            // V1.3: Reset host-ended state
+            setHostEndedGame(false);
         });
         
         // Timer tick - server sends countdown every second
@@ -288,6 +293,27 @@ export function GameProvider({ children }) {
             }, 2500);
         });
         
+        // V1.3: Game ended by host
+        socket.on('game:endedByHost', (data) => {
+            console.log('[Game] Game ended by host');
+            
+            // Mark as host-ended
+            setHostEndedGame(true);
+            
+            // Set results with imposter reveal
+            setResults({
+                imposter: data.imposter,
+                secretWord: data.secretWord,
+                hostEnded: true,
+                votedOutPlayer: null,
+                playersWin: null,
+                voteSummary: []
+            });
+            
+            // Clear timer
+            setTimer({ phase: null, remainingSeconds: 0 });
+        });
+        
         // Cleanup
         return () => {
             socket.off('player:joined');
@@ -307,6 +333,7 @@ export function GameProvider({ children }) {
             socket.off('game:timer');
             socket.off('game:settingsUpdated');
             socket.off('game:tieReplayStarted');
+            socket.off('game:endedByHost');
         };
     }, []);
 
@@ -568,6 +595,20 @@ export function GameProvider({ children }) {
         });
     }, []);
     
+    // V1.3: End game (host only)
+    const endGame = useCallback(() => {
+        return new Promise((resolve, reject) => {
+            socket.emit('game:endGame', (response) => {
+                if (response.success) {
+                    resolve(response);
+                } else {
+                    setError(response.error);
+                    reject(response.error);
+                }
+            });
+        });
+    }, []);
+    
     // V1.1: Send chat message
     const sendChatMessage = useCallback((text) => {
         return new Promise((resolve, reject) => {
@@ -635,6 +676,9 @@ export function GameProvider({ children }) {
         // V1.3: Tie transition state
         showTieTransition,
         
+        // V1.3: Host ended game state
+        hostEndedGame,
+        
         // V1.1: Chat
         chatMessages,
         
@@ -659,7 +703,8 @@ export function GameProvider({ children }) {
         confirmVote,
         sendChatMessage,
         playAgain,
-        updateSettings  // V1.2
+        updateSettings,  // V1.2
+        endGame          // V1.3
     };
 
     return (
