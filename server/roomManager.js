@@ -116,6 +116,27 @@ function shuffleArray(array) {
 // ROOM OPERATIONS
 // =============================================================================
 
+// =============================================================================
+// DEFAULT ROOM SETTINGS
+// =============================================================================
+
+/**
+ * V1.2: Default timer settings for new rooms.
+ * These can be modified by the host in the lobby.
+ */
+const DEFAULT_SETTINGS = {
+    descriptionTime: 10,   // seconds per speaker (min: 5, max: 60)
+    votingTime: 60         // seconds for voting phase (min: 15, max: 180)
+};
+
+/**
+ * V1.2: Validation limits for settings
+ */
+const SETTINGS_LIMITS = {
+    descriptionTime: { min: 5, max: 60 },
+    votingTime: { min: 15, max: 180 }
+};
+
 /**
  * Creates a new room with the specified host player.
  * @param {string} hostName - Name of the player creating the room
@@ -138,7 +159,8 @@ function createRoom(hostName, socketId) {
         phase: 'lobby',
         players: new Map([[playerId, player]]),
         createdAt: new Date(),
-        gameNumber: 0   // V1.1: Track number of games played
+        gameNumber: 0,              // V1.1: Track number of games played
+        settings: { ...DEFAULT_SETTINGS }  // V1.2: Host-configurable settings
     };
     
     rooms.set(roomCode, room);
@@ -146,6 +168,83 @@ function createRoom(hostName, socketId) {
     console.log(`[Room] Created room ${roomCode} by ${hostName}`);
     
     return { room, player };
+}
+
+/**
+ * V1.2: Updates room settings. Host-only, lobby phase only.
+ * 
+ * @param {string} roomCode - The room code
+ * @param {string} playerId - The player requesting the update (must be host)
+ * @param {Object} newSettings - Settings to update { descriptionTime?, votingTime? }
+ * @returns {Object} - { success, error?, room?, settings? }
+ */
+function updateRoomSettings(roomCode, playerId, newSettings) {
+    const room = rooms.get(roomCode.toUpperCase());
+    
+    if (!room) {
+        return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+    
+    // Only allow in lobby or postGame phase
+    if (room.phase !== 'lobby' && room.phase !== 'postGame') {
+        return { success: false, error: 'INVALID_PHASE' };
+    }
+    
+    // Only host can update settings
+    if (room.hostId !== playerId) {
+        return { success: false, error: 'NOT_HOST' };
+    }
+    
+    // Initialize settings if missing (for rooms created before v1.2)
+    if (!room.settings) {
+        room.settings = { ...DEFAULT_SETTINGS };
+    }
+    
+    // Validate and apply each setting
+    const updatedFields = [];
+    
+    if (newSettings.descriptionTime !== undefined) {
+        const value = parseInt(newSettings.descriptionTime, 10);
+        const limits = SETTINGS_LIMITS.descriptionTime;
+        
+        if (isNaN(value) || value < limits.min || value > limits.max) {
+            return { 
+                success: false, 
+                error: 'INVALID_VALUE',
+                field: 'descriptionTime',
+                limits: limits
+            };
+        }
+        
+        room.settings.descriptionTime = value;
+        updatedFields.push('descriptionTime');
+    }
+    
+    if (newSettings.votingTime !== undefined) {
+        const value = parseInt(newSettings.votingTime, 10);
+        const limits = SETTINGS_LIMITS.votingTime;
+        
+        if (isNaN(value) || value < limits.min || value > limits.max) {
+            return { 
+                success: false, 
+                error: 'INVALID_VALUE',
+                field: 'votingTime',
+                limits: limits
+            };
+        }
+        
+        room.settings.votingTime = value;
+        updatedFields.push('votingTime');
+    }
+    
+    console.log(`[Room] Settings updated in room ${roomCode}: ${updatedFields.join(', ')}`);
+    
+    return { 
+        success: true, 
+        room: room,
+        settings: room.settings,
+        updatedFields: updatedFields
+    };
 }
 
 /**
@@ -392,7 +491,8 @@ function getRejoinState(roomCode, playerId) {
         player: player,
         phase: room.phase,
         topic: room.topic || null,
-        gameNumber: room.gameNumber || 1
+        gameNumber: room.gameNumber || 1,
+        settings: room.settings || { descriptionTime: 10, votingTime: 60 }  // V1.2
     };
     
     // Game in progress - include role information
@@ -1696,7 +1796,8 @@ function serializeRoom(room) {
             // Note: socketId is NOT sent to clients
         })),
         playerCount: room.players.size,
-        gameNumber: room.gameNumber || 0   // V1.1: Include game count
+        gameNumber: room.gameNumber || 0,   // V1.1: Include game count
+        settings: room.settings || { descriptionTime: 10, votingTime: 60 }  // V1.2: Include settings
     };
     
     // Include topic if game has started (topic is public knowledge)
@@ -1743,5 +1844,8 @@ module.exports = {
     clearPostGameTimeout,
     addChatMessage,
     getChatMessages,
+    updateRoomSettings,      // V1.2
+    DEFAULT_SETTINGS,        // V1.2
+    SETTINGS_LIMITS,         // V1.2
     MIN_PLAYERS
 };

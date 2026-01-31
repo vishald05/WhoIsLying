@@ -61,12 +61,14 @@ const roomTimers = new Map();
  * @param {string} phase - The phase to time (roleReveal, description, voting)
  * @param {Function} onTick - Called every second with (roomCode, phase, remainingSeconds)
  * @param {Function} onExpire - Called when timer expires
+ * @param {number} [customDuration] - V1.2: Optional custom duration in seconds (overrides PHASE_DURATIONS)
  */
-function startTimer(roomCode, phase, onTick, onExpire) {
+function startTimer(roomCode, phase, onTick, onExpire, customDuration = null) {
     // Clear any existing timer for this room
     clearTimer(roomCode);
     
-    const duration = PHASE_DURATIONS[phase];
+    // V1.2: Use custom duration if provided, otherwise use default
+    const duration = customDuration !== null ? customDuration : PHASE_DURATIONS[phase];
     
     if (!duration) {
         console.log(`[Timer] No timer configured for phase: ${phase}`);

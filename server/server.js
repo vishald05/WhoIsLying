@@ -235,6 +235,47 @@ io.on('connection', (socket) => {
     });
 
     // -------------------------------------------------------------------------
+    // V1.2: UPDATE ROOM SETTINGS
+    // Client sends: { descriptionTime?: number, votingTime?: number }
+    // Server responds: { success, error?, settings? }
+    // 
+    // Host-only. Only allowed in lobby or postGame phase.
+    // Broadcasts updated settings to all players in the room.
+    // -------------------------------------------------------------------------
+    socket.on('game:updateSettings', (data, callback) => {
+        const playerData = roomManager.getPlayerBySocketId(socket.id);
+        
+        if (!playerData) {
+            return callback({ success: false, error: 'NOT_IN_ROOM' });
+        }
+        
+        const { room, player } = playerData;
+        
+        const result = roomManager.updateRoomSettings(room.code, player.id, data);
+        
+        if (!result.success) {
+            return callback({
+                success: false,
+                error: result.error,
+                field: result.field,
+                limits: result.limits
+            });
+        }
+        
+        // Broadcast settings update to all players in the room
+        io.to(room.code).emit('game:settingsUpdated', {
+            settings: result.settings
+        });
+        
+        callback({
+            success: true,
+            settings: result.settings
+        });
+        
+        console.log(`[Settings] Room ${room.code} settings updated by ${player.name}`);
+    });
+
+    // -------------------------------------------------------------------------
     // START GAME
     // Client sends: (no data needed, uses socket.id to verify host)
     // Server responds: { success, error?, room? }
@@ -700,12 +741,14 @@ function onTimerExpire(roomCode, phase) {
 
 /**
  * Starts a timer for a specific phase.
+ * V1.2: Added optional customDuration parameter for configurable timers.
  * 
  * @param {string} roomCode - The room code
  * @param {string} phase - The phase to time
+ * @param {number} [customDuration] - Optional custom duration in seconds
  */
-function startPhaseTimer(roomCode, phase) {
-    timerManager.startTimer(roomCode, phase, onTimerTick, onTimerExpire);
+function startPhaseTimer(roomCode, phase, customDuration = null) {
+    timerManager.startTimer(roomCode, phase, onTimerTick, onTimerExpire, customDuration);
 }
 
 /**
@@ -752,15 +795,19 @@ function transitionToDescriptionPhaseWithTimer(roomCode) {
 }
 
 /**
- * V1.1: Starts a 10-second timer for the current speaker's turn.
+ * V1.1: Starts a timer for the current speaker's turn.
+ * V1.2: Uses room.settings.descriptionTime (configurable).
  * 
  * @param {string} roomCode - The room code
  */
 function startSpeakerTurnTimer(roomCode) {
+    const room = roomManager.getRoom(roomCode);
+    const duration = room?.settings?.descriptionTime || 10;  // V1.2: Use configurable duration
+    
     timerManager.startTimer(roomCode, 'descriptionTurn', onTimerTick, (roomCode, phase) => {
         // Turn timeout - auto-submit and advance
         handleSpeakerTurnTimeout(roomCode);
-    });
+    }, duration);
 }
 
 /**
@@ -970,8 +1017,10 @@ function handleDescriptionPhaseComplete(roomCode) {
     
     console.log(`[Game] Description phase ended in room ${roomCode}, ${descResult.descriptions.length} descriptions collected`);
     
-    // Start voting phase timer
-    startPhaseTimer(roomCode, 'voting');
+    // Start voting phase timer with configurable duration
+    const room = roomManager.getRoom(roomCode);
+    const votingDuration = room?.settings?.votingTime || 60;  // V1.2: Use configurable duration
+    startPhaseTimer(roomCode, 'voting', votingDuration);
 }
 
 /**

@@ -54,6 +54,9 @@ export function GameProvider({ children }) {
     // Timer state
     const [timer, setTimer] = useState({ phase: null, remainingSeconds: 0 });
     
+    // V1.2: Room settings state
+    const [roomSettings, setRoomSettings] = useState({ descriptionTime: 10, votingTime: 60 });
+    
     // Error state
     const [error, setError] = useState(null);
 
@@ -96,16 +99,26 @@ export function GameProvider({ children }) {
         // Player joined room
         socket.on('player:joined', (data) => {
             setRoom(data.room);
+            // V1.2: Sync settings when room updates
+            if (data.room?.settings) {
+                setRoomSettings(data.room.settings);
+            }
         });
         
         // Player left room
         socket.on('player:left', (data) => {
             setRoom(data.room);
+            if (data.room?.settings) {
+                setRoomSettings(data.room.settings);
+            }
         });
         
         // Host changed
         socket.on('room:hostChanged', (data) => {
             setRoom(data.room);
+            if (data.room?.settings) {
+                setRoomSettings(data.room.settings);
+            }
         });
         
         // Game started - receive role assignment
@@ -233,6 +246,11 @@ export function GameProvider({ children }) {
             setTimer({ phase: data.phase, remainingSeconds: data.remainingSeconds });
         });
         
+        // V1.2: Room settings updated by host
+        socket.on('game:settingsUpdated', (data) => {
+            setRoomSettings(data.settings);
+        });
+        
         // Cleanup
         return () => {
             socket.off('player:joined');
@@ -250,6 +268,7 @@ export function GameProvider({ children }) {
             socket.off('game:results');
             socket.off('game:reset');
             socket.off('game:timer');
+            socket.off('game:settingsUpdated');
         };
     }, []);
 
@@ -263,6 +282,10 @@ export function GameProvider({ children }) {
                 if (response.success) {
                     setPlayer(response.player);
                     setRoom(response.room);
+                    // V1.2: Initialize settings from room
+                    if (response.room?.settings) {
+                        setRoomSettings(response.room.settings);
+                    }
                     resolve(response);
                 } else {
                     setError(response.error);
@@ -279,9 +302,19 @@ export function GameProvider({ children }) {
                     setPlayer(response.player);
                     setRoom(response.room);
                     
+                    // V1.2: Restore settings from room
+                    if (response.room?.settings) {
+                        setRoomSettings(response.room.settings);
+                    }
+                    
                     // V1.1: Handle rejoin state restoration
                     if (response.isRejoin && response.rejoinState) {
                         const state = response.rejoinState;
+                        
+                        // V1.2: Restore settings from rejoin state
+                        if (state.settings) {
+                            setRoomSettings(state.settings);
+                        }
                         
                         // Restore role information
                         if (state.isImposter !== undefined) {
@@ -482,6 +515,21 @@ export function GameProvider({ children }) {
         });
     }, []);
     
+    // V1.2: Update room settings (host only)
+    const updateSettings = useCallback((newSettings) => {
+        return new Promise((resolve, reject) => {
+            socket.emit('game:updateSettings', newSettings, (response) => {
+                if (response.success) {
+                    setRoomSettings(response.settings);
+                    resolve(response);
+                } else {
+                    // Don't block gameplay - just reject quietly
+                    reject(response.error);
+                }
+            });
+        });
+    }, []);
+    
     // V1.1: Send chat message
     const sendChatMessage = useCallback((text) => {
         return new Promise((resolve, reject) => {
@@ -520,6 +568,9 @@ export function GameProvider({ children }) {
         room,
         isHost,
         phase,
+        
+        // V1.2: Room settings
+        roomSettings,
         
         // Game state
         isImposter,
@@ -566,7 +617,8 @@ export function GameProvider({ children }) {
         selectVote,
         confirmVote,
         sendChatMessage,
-        playAgain
+        playAgain,
+        updateSettings  // V1.2
     };
 
     return (
